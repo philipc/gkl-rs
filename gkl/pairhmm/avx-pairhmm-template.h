@@ -368,7 +368,7 @@ template<class NUMBER> NUMBER CONCAT(CONCAT(compute_full_prob_,SIMD_ENGINE), PRE
         sumMX.d = VEC_ADD(sumM, sumX);
         result_avx2 = sumMX.f[remainingRows-1];
     }
-    return result_avx2;
+    return result_avx2 / ctx.INITIAL_CONSTANT;
 }
 
 #endif
