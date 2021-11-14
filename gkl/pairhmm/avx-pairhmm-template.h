@@ -234,6 +234,9 @@ inline void CONCAT(CONCAT(computeMXY,SIMD_ENGINE), PRECISION)(UNION_TYPE &M_t, U
 
 template<class NUMBER> NUMBER CONCAT(CONCAT(compute_full_prob_,SIMD_ENGINE), PRECISION) (testcase *tc)
 {
+    int mode = _MM_GET_FLUSH_ZERO_MODE();
+    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+
     int ROWS = tc->rslen + 1;
     int COLS = tc->haplen + 1;
     int MAVX_COUNT = (ROWS+AVX_LENGTH-1)/AVX_LENGTH;
@@ -368,7 +371,10 @@ template<class NUMBER> NUMBER CONCAT(CONCAT(compute_full_prob_,SIMD_ENGINE), PRE
         sumMX.d = VEC_ADD(sumM, sumX);
         result_avx2 = sumMX.f[remainingRows-1];
     }
-    return result_avx2 / ctx.INITIAL_CONSTANT;
+
+    result_avx2 /= ctx.INITIAL_CONSTANT;
+    _MM_SET_FLUSH_ZERO_MODE(mode);
+    return result_avx2;
 }
 
 #endif
