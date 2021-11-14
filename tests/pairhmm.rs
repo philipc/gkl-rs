@@ -4,22 +4,22 @@ use std::io::{BufRead, BufReader};
 
 fn test_one(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8], expected: f64) {
     println!("expected: {}", expected);
-    if let Some(fp) = gkl::pairhmm_avxs(hap, rs, q, i, d, c) {
+    if let Some(fp) = gkl::pairhmm::forward_avxs(hap, rs, q, i, d, c) {
         println!("{}", fp.log10());
         assert!((fp.log10() as f64 - expected).abs() < 1e-5);
     }
 
-    if let Some(fp) = gkl::pairhmm_avxd(hap, rs, q, i, d, c) {
+    if let Some(fp) = gkl::pairhmm::forward_avxd(hap, rs, q, i, d, c) {
         println!("{}", fp.log10());
         assert!((fp.log10() - expected).abs() < 1e-5);
     }
 
-    if let Some(fp) = gkl::pairhmm_avx512s(hap, rs, q, i, d, c) {
+    if let Some(fp) = gkl::pairhmm::forward_avx512s(hap, rs, q, i, d, c) {
         println!("{}", fp.log10());
         assert!((fp.log10() as f64 - expected).abs() < 1e-5);
     }
 
-    if let Some(fp) = gkl::pairhmm_avx512d(hap, rs, q, i, d, c) {
+    if let Some(fp) = gkl::pairhmm::forward_avx512d(hap, rs, q, i, d, c) {
         println!("{}", fp.log10());
         assert!((fp.log10() - expected).abs() < 1e-5);
     }
