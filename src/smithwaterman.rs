@@ -1,41 +1,36 @@
 use std::os::raw::c_char;
 
 extern "C" {
-    pub static mut runSWOnePairBT_fp_avx2: ::std::option::Option<
-        unsafe extern "C" fn(
-            match_: i32,
-            mismatch: i32,
-            open: i32,
-            extend: i32,
-            seq1: *const u8,
-            seq2: *const u8,
-            len1: i16,
-            len2: i16,
-            overhangStrategy: i8,
-            cigarArray: *mut ::std::os::raw::c_char,
-            cigarLen: i32,
-            cigarCount: *mut u32,
-            offset: *mut i32,
-        ) -> i32,
-    >;
-    pub static mut runSWOnePairBT_fp_avx512: ::std::option::Option<
-        unsafe extern "C" fn(
-            match_: i32,
-            mismatch: i32,
-            open: i32,
-            extend: i32,
-            seq1: *const u8,
-            seq2: *const u8,
-            len1: i16,
-            len2: i16,
-            overhangStrategy: i8,
-            cigarArray: *mut ::std::os::raw::c_char,
-            cigarLen: i32,
-            cigarCount: *mut u32,
-            offset: *mut i32,
-        ) -> i32,
-    >;
-
+    fn runSWOnePairBT_avx2(
+        match_: i32,
+        mismatch: i32,
+        open: i32,
+        extend: i32,
+        seq1: *const u8,
+        seq2: *const u8,
+        len1: i16,
+        len2: i16,
+        overhangStrategy: i8,
+        cigarArray: *mut ::std::os::raw::c_char,
+        cigarLen: i32,
+        cigarCount: *mut u32,
+        offset: *mut i32,
+    ) -> i32;
+    fn runSWOnePairBT_avx512(
+        match_: i32,
+        mismatch: i32,
+        open: i32,
+        extend: i32,
+        seq1: *const u8,
+        seq2: *const u8,
+        len1: i16,
+        len2: i16,
+        overhangStrategy: i8,
+        cigarArray: *mut ::std::os::raw::c_char,
+        cigarLen: i32,
+        cigarCount: *mut u32,
+        offset: *mut i32,
+    ) -> i32;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -105,54 +100,59 @@ pub enum OverhangStrategy {
     Ignore = 12,
 }
 
-pub fn align_avx2(
+type Align = fn(
     ref_array: &[u8],
     alt_array: &[u8],
     parameters: Parameters,
     overhang_strategy: OverhangStrategy,
-) -> Option<(Vec<u8>, usize)> {
+) -> Option<(Vec<u8>, usize)>;
+
+pub fn align_avx2() -> Option<Align> {
     if !is_x86_feature_detected!("avx2") {
         return None;
     }
-    parameters.validate();
-    // TODO: array length validation
-    let ref_len = ref_array.len();
-    let alt_len = alt_array.len();
-    let cigar_len = 2 * std::cmp::max(ref_len, alt_len);
-    let mut cigar_array = Vec::with_capacity(cigar_len);
-    let mut count = 0u32;
-    let mut offset = 0i32;
-    let result = unsafe {
-        runSWOnePairBT_fp_avx2.unwrap()(
-            parameters.match_value,
-            parameters.mismatch_penalty,
-            parameters.gap_open_penalty,
-            parameters.gap_extend_penalty,
-            ref_array.as_ptr() as _,
-            alt_array.as_ptr() as _,
-            ref_len as i16,
-            alt_len as i16,
-            overhang_strategy as i8,
-            cigar_array.as_mut_ptr() as *mut c_char,
-            cigar_len as i32,
-            &mut count,
-            &mut offset,
-        )
-    };
-    if result == 0 {
-        unsafe { cigar_array.set_len(count as usize) };
-        Some((cigar_array, offset as usize))
-    } else {
-        None
+    fn f(
+        ref_array: &[u8],
+        alt_array: &[u8],
+        parameters: Parameters,
+        overhang_strategy: OverhangStrategy,
+    ) -> Option<(Vec<u8>, usize)> {
+        parameters.validate();
+        // TODO: array length validation
+        let ref_len = ref_array.len();
+        let alt_len = alt_array.len();
+        let cigar_len = 2 * std::cmp::max(ref_len, alt_len);
+        let mut cigar_array = Vec::with_capacity(cigar_len);
+        let mut count = 0u32;
+        let mut offset = 0i32;
+        let result = unsafe {
+            runSWOnePairBT_avx2(
+                parameters.match_value,
+                parameters.mismatch_penalty,
+                parameters.gap_open_penalty,
+                parameters.gap_extend_penalty,
+                ref_array.as_ptr() as _,
+                alt_array.as_ptr() as _,
+                ref_len as i16,
+                alt_len as i16,
+                overhang_strategy as i8,
+                cigar_array.as_mut_ptr() as *mut c_char,
+                cigar_len as i32,
+                &mut count,
+                &mut offset,
+            )
+        };
+        if result == 0 {
+            unsafe { cigar_array.set_len(count as usize) };
+            Some((cigar_array, offset as usize))
+        } else {
+            None
+        }
     }
+    Some(f)
 }
 
-pub fn align_avx512(
-    ref_array: &[u8],
-    alt_array: &[u8],
-    parameters: Parameters,
-    overhang_strategy: OverhangStrategy,
-) -> Option<(Vec<u8>, usize)> {
+pub fn align_avx512() -> Option<Align> {
     if !is_x86_feature_detected!("avx512f")
         || !is_x86_feature_detected!("avx512dq")
         || !is_x86_feature_detected!("avx512vl")
@@ -160,35 +160,47 @@ pub fn align_avx512(
     {
         return None;
     }
-    parameters.validate();
-    // TODO: array length validation
-    let ref_len = ref_array.len();
-    let alt_len = alt_array.len();
-    let cigar_len = 2 * std::cmp::max(ref_len, alt_len);
-    let mut cigar_array = Vec::with_capacity(cigar_len);
-    let mut count = 0u32;
-    let mut offset = 0i32;
-    let result = unsafe {
-        runSWOnePairBT_fp_avx512.unwrap()(
-            parameters.match_value,
-            parameters.mismatch_penalty,
-            parameters.gap_open_penalty,
-            parameters.gap_extend_penalty,
-            ref_array.as_ptr() as _,
-            alt_array.as_ptr() as _,
-            ref_len as i16,
-            alt_len as i16,
-            overhang_strategy as i8,
-            cigar_array.as_mut_ptr() as *mut c_char,
-            cigar_len as i32,
-            &mut count,
-            &mut offset,
-        )
-    };
-    if result == 0 {
-        unsafe { cigar_array.set_len(count as usize) };
-        Some((cigar_array, offset as usize))
-    } else {
-        None
+    fn f(
+        ref_array: &[u8],
+        alt_array: &[u8],
+        parameters: Parameters,
+        overhang_strategy: OverhangStrategy,
+    ) -> Option<(Vec<u8>, usize)> {
+        parameters.validate();
+        // TODO: array length validation
+        let ref_len = ref_array.len();
+        let alt_len = alt_array.len();
+        let cigar_len = 2 * std::cmp::max(ref_len, alt_len);
+        let mut cigar_array = Vec::with_capacity(cigar_len);
+        let mut count = 0u32;
+        let mut offset = 0i32;
+        let result = unsafe {
+            runSWOnePairBT_avx512(
+                parameters.match_value,
+                parameters.mismatch_penalty,
+                parameters.gap_open_penalty,
+                parameters.gap_extend_penalty,
+                ref_array.as_ptr() as _,
+                alt_array.as_ptr() as _,
+                ref_len as i16,
+                alt_len as i16,
+                overhang_strategy as i8,
+                cigar_array.as_mut_ptr() as *mut c_char,
+                cigar_len as i32,
+                &mut count,
+                &mut offset,
+            )
+        };
+        if result == 0 {
+            unsafe { cigar_array.set_len(count as usize) };
+            Some((cigar_array, offset as usize))
+        } else {
+            None
+        }
     }
+    Some(f)
+}
+
+pub fn align() -> Option<Align> {
+    align_avx512().or_else(align_avx2)
 }

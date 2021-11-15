@@ -8,16 +8,20 @@ fn test_one(
     expected: &[u8],
     expected_offset: usize,
 ) {
-    if let Some((cigar, offset)) =
-        gkl::smithwaterman::align_avx2(ref_array, alt_array, parameters, overhang)
-    {
+    if let Some(f) = gkl::smithwaterman::align_avx2() {
+        let (cigar, offset) = f(ref_array, alt_array, parameters, overhang).unwrap();
         assert_eq!(cigar, expected);
         assert_eq!(offset, expected_offset);
     }
 
-    if let Some((cigar, offset)) =
-        gkl::smithwaterman::align_avx512(ref_array, alt_array, parameters, overhang)
-    {
+    if let Some(f) = gkl::smithwaterman::align_avx512() {
+        let (cigar, offset) = f(ref_array, alt_array, parameters, overhang).unwrap();
+        assert_eq!(cigar, expected);
+        assert_eq!(offset, expected_offset);
+    }
+
+    if let Some(f) = gkl::smithwaterman::align() {
+        let (cigar, offset) = f(ref_array, alt_array, parameters, overhang).unwrap();
         assert_eq!(cigar, expected);
         assert_eq!(offset, expected_offset);
     }
