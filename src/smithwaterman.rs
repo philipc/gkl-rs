@@ -105,7 +105,7 @@ pub enum OverhangStrategy {
     Ignore = 12,
 }
 
-pub fn align_avx(
+pub fn align_avx2(
     ref_array: &[u8],
     alt_array: &[u8],
     parameters: Parameters,

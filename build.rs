@@ -7,6 +7,10 @@ fn main() {
         .compile("gkl-common");
     cc::Build::new()
         .file("gkl/pairhmm/avx_impl.cc")
+        .flag("-mavx")
+        .warnings(false)
+        .compile("gkl-avx");
+    cc::Build::new()
         .file("gkl/smithwaterman/avx2_impl.cc")
         .flag("-mavx2")
         .warnings(false)

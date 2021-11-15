@@ -9,7 +9,7 @@ fn test_one(
     expected_offset: usize,
 ) {
     if let Some((cigar, offset)) =
-        gkl::smithwaterman::align_avx(ref_array, alt_array, parameters, overhang)
+        gkl::smithwaterman::align_avx2(ref_array, alt_array, parameters, overhang)
     {
         assert_eq!(cigar, expected);
         assert_eq!(offset, expected_offset);

@@ -53,7 +53,7 @@ fn testcase(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> Te
 }
 
 pub fn forward_avxs(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> Option<f32> {
-    if !is_x86_feature_detected!("avx2") {
+    if !is_x86_feature_detected!("avx") {
         return None;
     }
     convert_char_init();
@@ -62,7 +62,7 @@ pub fn forward_avxs(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8
 }
 
 pub fn forward_avxd(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> Option<f64> {
-    if !is_x86_feature_detected!("avx2") {
+    if !is_x86_feature_detected!("avx") {
         return None;
     }
     convert_char_init();
