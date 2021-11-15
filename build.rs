@@ -9,19 +9,30 @@ fn main() {
         .file("gkl/pairhmm/avx_impl.cc")
         .flag("-mavx")
         .warnings(false)
-        .compile("gkl-avx");
+        .compile("gkl-pairhmm-avx");
     cc::Build::new()
         .file("gkl/smithwaterman/avx2_impl.cc")
+        .flag("-mavx")
         .flag("-mavx2")
         .warnings(false)
-        .compile("gkl-avx2");
+        .compile("gkl-sw-avx2");
     cc::Build::new()
         .file("gkl/pairhmm/avx512_impl.cc")
+        .flag("-mavx")
+        .flag("-mavx2")
+        .flag("-mavx512f")
+        .flag("-mavx512dq")
+        .flag("-mavx512vl")
+        .warnings(false)
+        .compile("gkl-pairhmm-avx512");
+    cc::Build::new()
         .file("gkl/smithwaterman/avx512_impl.cc")
+        .flag("-mavx")
+        .flag("-mavx2")
         .flag("-mavx512f")
         .flag("-mavx512dq")
         .flag("-mavx512vl")
         .flag("-mavx512bw")
         .warnings(false)
-        .compile("gkl-avx512");
+        .compile("gkl-sw-avx512");
 }

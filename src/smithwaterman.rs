@@ -153,7 +153,11 @@ pub fn align_avx512(
     parameters: Parameters,
     overhang_strategy: OverhangStrategy,
 ) -> Option<(Vec<u8>, usize)> {
-    if !is_x86_feature_detected!("avx2") {
+    if !is_x86_feature_detected!("avx512f")
+        || !is_x86_feature_detected!("avx512dq")
+        || !is_x86_feature_detected!("avx512vl")
+        || !is_x86_feature_detected!("avx512bw")
+    {
         return None;
     }
     parameters.validate();
