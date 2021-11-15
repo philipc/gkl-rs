@@ -372,7 +372,6 @@ template<class NUMBER> NUMBER CONCAT(CONCAT(compute_full_prob_,SIMD_ENGINE), PRE
         result_avx2 = sumMX.f[remainingRows-1];
     }
 
-    result_avx2 /= ctx.INITIAL_CONSTANT;
     _MM_SET_FLUSH_ZERO_MODE(mode);
     return result_avx2;
 }

@@ -24,6 +24,32 @@
 #include "avx_impl.h"
 #include "avx-pairhmm.h"
 
-float (*compute_fp_avxs)(testcase*) = &compute_full_prob_avxs;
-double (*compute_fp_avxd)(testcase*) = &compute_full_prob_avxd;
+Context<float> g_ctxf;
+Context<double> g_ctxd;
 
+float compute_avxs(testcase *tc)
+{
+  float result = compute_full_prob_avxs<float>(tc);
+  return log10f(result) - g_ctxf.LOG10_INITIAL_CONSTANT;
+}
+
+double compute_avxd(testcase *tc)
+{
+  double result = compute_full_prob_avxd<double>(tc);
+  return log10(result) - g_ctxd.LOG10_INITIAL_CONSTANT;
+}
+
+double compute_avx(testcase *tc)
+{
+  double result_final = 0;
+  float result_float = compute_full_prob_avxs<float>(tc);
+
+  if (result_float < MIN_ACCEPTED) {
+    double result_double = compute_full_prob_avxd<double>(tc);
+    result_final = log10(result_double) - g_ctxd.LOG10_INITIAL_CONSTANT;
+  }
+  else {
+    result_final = (double)(log10f(result_float) - g_ctxf.LOG10_INITIAL_CONSTANT);
+  }
+  return result_final;
+}

@@ -22,17 +22,34 @@
  * SOFTWARE.
  */
 #include "avx512_impl.h"
-
-#ifndef __APPLE__
-
 #include "avx512-pairhmm.h"
 
-float (*compute_fp_avx512s)(testcase*) = &compute_full_prob_avx512s;
-double (*compute_fp_avx512d)(testcase*) = &compute_full_prob_avx512d;
+extern Context<float> g_ctxf;
+extern Context<double> g_ctxd;
 
-#else
+float compute_avx512s(testcase *tc)
+{
+  float result = compute_full_prob_avx512s<float>(tc);
+  return log10f(result) - g_ctxf.LOG10_INITIAL_CONSTANT;
+}
 
-float (*compute_fp_avx512s)(testcase*) = NULL;
-double (*compute_fp_avx512d)(testcase*) = NULL;
+double compute_avx512d(testcase *tc)
+{
+  double result = compute_full_prob_avx512d<double>(tc);
+  return log10(result) - g_ctxd.LOG10_INITIAL_CONSTANT;
+}
 
-#endif
+double compute_avx512(testcase *tc)
+{
+  double result_final = 0;
+  float result_float = compute_full_prob_avx512s<float>(tc);
+
+  if (result_float < MIN_ACCEPTED) {
+    double result_double = compute_full_prob_avx512d<double>(tc);
+    result_final = log10(result_double) - g_ctxd.LOG10_INITIAL_CONSTANT;
+  }
+  else {
+    result_final = (double)(log10f(result_float) - g_ctxf.LOG10_INITIAL_CONSTANT);
+  }
+  return result_final;
+}

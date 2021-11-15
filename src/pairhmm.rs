@@ -15,10 +15,12 @@ struct Testcase {
 }
 
 extern "C" {
-    static mut compute_fp_avxs: Option<unsafe extern "C" fn(arg1: *mut Testcase) -> f32>;
-    static mut compute_fp_avxd: Option<unsafe extern "C" fn(arg1: *mut Testcase) -> f64>;
-    static mut compute_fp_avx512s: Option<unsafe extern "C" fn(arg1: *mut Testcase) -> f32>;
-    static mut compute_fp_avx512d: Option<unsafe extern "C" fn(arg1: *mut Testcase) -> f64>;
+    fn compute_avxs(arg1: *mut Testcase) -> f32;
+    fn compute_avxd(arg1: *mut Testcase) -> f64;
+    fn compute_avx(arg1: *mut Testcase) -> f64;
+    fn compute_avx512s(arg1: *mut Testcase) -> f32;
+    fn compute_avx512d(arg1: *mut Testcase) -> f64;
+    fn compute_avx512(arg1: *mut Testcase) -> f64;
     #[link_name = "\u{1}_ZN11ConvertChar15conversionTableE"]
     static mut ConvertChar_conversionTable: [u8; 255usize];
 }
@@ -52,32 +54,45 @@ fn testcase(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> Te
     }
 }
 
-pub fn forward_avxs(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> Option<f32> {
+type ForwardF32 = fn(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f32;
+type Forward = fn(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f64;
+
+pub fn forward_f32_avx() -> Option<ForwardF32> {
     if !is_x86_feature_detected!("avx") {
         return None;
     }
     convert_char_init();
-    let mut tc = testcase(hap, rs, q, i, d, c);
-    Some(unsafe { compute_fp_avxs.unwrap()(&mut tc) })
+    fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f32 {
+        let mut tc = testcase(hap, rs, q, i, d, c);
+        unsafe { compute_avxs(&mut tc) }
+    }
+    Some(f)
 }
 
-pub fn forward_avxd(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> Option<f64> {
+pub fn forward_f64_avx() -> Option<Forward> {
     if !is_x86_feature_detected!("avx") {
         return None;
     }
     convert_char_init();
-    let mut tc = testcase(hap, rs, q, i, d, c);
-    Some(unsafe { compute_fp_avxd.unwrap()(&mut tc) })
+    fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f64 {
+        let mut tc = testcase(hap, rs, q, i, d, c);
+        unsafe { compute_avxd(&mut tc) }
+    }
+    Some(f)
 }
 
-pub fn forward_avx512s(
-    hap: &[u8],
-    rs: &[u8],
-    q: &[u8],
-    i: &[u8],
-    d: &[u8],
-    c: &[u8],
-) -> Option<f32> {
+pub fn forward_avx() -> Option<Forward> {
+    if !is_x86_feature_detected!("avx") {
+        return None;
+    }
+    fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f64 {
+        let mut tc = testcase(hap, rs, q, i, d, c);
+        unsafe { compute_avx(&mut tc) }
+    }
+    Some(f)
+}
+
+pub fn forward_f32_avx512() -> Option<ForwardF32> {
     if !is_x86_feature_detected!("avx512f")
         || !is_x86_feature_detected!("avx512dq")
         || !is_x86_feature_detected!("avx512vl")
@@ -85,18 +100,14 @@ pub fn forward_avx512s(
         return None;
     }
     convert_char_init();
-    let mut tc = testcase(hap, rs, q, i, d, c);
-    Some(unsafe { compute_fp_avx512s.unwrap()(&mut tc) })
+    fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f32 {
+        let mut tc = testcase(hap, rs, q, i, d, c);
+        unsafe { compute_avx512s(&mut tc) }
+    }
+    Some(f)
 }
 
-pub fn forward_avx512d(
-    hap: &[u8],
-    rs: &[u8],
-    q: &[u8],
-    i: &[u8],
-    d: &[u8],
-    c: &[u8],
-) -> Option<f64> {
+pub fn forward_f64_avx512() -> Option<Forward> {
     if !is_x86_feature_detected!("avx512f")
         || !is_x86_feature_detected!("avx512dq")
         || !is_x86_feature_detected!("avx512vl")
@@ -104,6 +115,35 @@ pub fn forward_avx512d(
         return None;
     }
     convert_char_init();
-    let mut tc = testcase(hap, rs, q, i, d, c);
-    Some(unsafe { compute_fp_avx512d.unwrap()(&mut tc) })
+    fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f64 {
+        let mut tc = testcase(hap, rs, q, i, d, c);
+        unsafe { compute_avx512d(&mut tc) }
+    }
+    Some(f)
+}
+
+pub fn forward_avx512() -> Option<Forward> {
+    if !is_x86_feature_detected!("avx512f")
+        || !is_x86_feature_detected!("avx512dq")
+        || !is_x86_feature_detected!("avx512vl")
+    {
+        return None;
+    }
+    fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f64 {
+        let mut tc = testcase(hap, rs, q, i, d, c);
+        unsafe { compute_avx512(&mut tc) }
+    }
+    Some(f)
+}
+
+pub fn forward_f32() -> Option<ForwardF32> {
+    forward_f32_avx512().or_else(forward_f32_avx)
+}
+
+pub fn forward_f64() -> Option<Forward> {
+    forward_f64_avx512().or_else(forward_f64_avx)
+}
+
+pub fn forward() -> Option<Forward> {
+    forward_avx512().or_else(forward_avx)
 }

@@ -26,8 +26,9 @@
 
 #include "pairhmm_common.h"
 
-extern float (*compute_fp_avxs)(testcase*);
-extern double (*compute_fp_avxd)(testcase*);
+extern "C" float compute_avxs(testcase*);
+extern "C" double compute_avxd(testcase*);
+extern "C" double compute_avx(testcase*);
 
 #endif //AVX_IMPL_H
 
