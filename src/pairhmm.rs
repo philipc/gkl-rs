@@ -85,6 +85,7 @@ pub fn forward_avx() -> Option<Forward> {
     if !is_x86_feature_detected!("avx") {
         return None;
     }
+    convert_char_init();
     fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f64 {
         let mut tc = testcase(hap, rs, q, i, d, c);
         unsafe { compute_avx(&mut tc) }
@@ -129,6 +130,7 @@ pub fn forward_avx512() -> Option<Forward> {
     {
         return None;
     }
+    convert_char_init();
     fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f64 {
         let mut tc = testcase(hap, rs, q, i, d, c);
         unsafe { compute_avx512(&mut tc) }
