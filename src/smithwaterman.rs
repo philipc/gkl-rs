@@ -1,3 +1,4 @@
+use std::fmt;
 use std::os::raw::c_char;
 
 extern "C" {
@@ -32,6 +33,28 @@ extern "C" {
         offset: *mut i32,
     ) -> i32;
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct Error(&'static str);
+
+impl fmt::Display for Error {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for Error {}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+/// limited due to the internal implementation of the native code in C
+const MAX_SW_SEQUENCE_LENGTH: usize = 32 * 1024 - 1; // 2^15 - 1
+/// prevents integer overflow on the diagonal of the scoring matrix
+const MAXIMUM_SW_MATCH_VALUE: i32 = 64 * 1024; // 2^16
+
+const SW_SUCCESS: i32 = 0;
+const SW_MEMORY_ALLOCATION_FAILED: i32 = 1;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Parameters {
@@ -71,11 +94,23 @@ impl Parameters {
         }
     }
 
-    fn validate(self) {
-        assert!(self.match_value >= 0);
-        assert!(self.mismatch_penalty <= 0);
-        assert!(self.gap_open_penalty <= 0);
-        assert!(self.gap_extend_penalty <= 0);
+    fn validate(self) -> Result<()> {
+        if self.match_value < 0 {
+            return Err(Error("match value must be >= 0"));
+        }
+        if self.match_value > MAXIMUM_SW_MATCH_VALUE {
+            return Err(Error("match value exceeds maximum"));
+        }
+        if self.mismatch_penalty > 0 {
+            return Err(Error("mismatch penalty must be <= 0"));
+        }
+        if self.gap_open_penalty > 0 {
+            return Err(Error("gap open penalty must be <= 0"));
+        }
+        if self.gap_extend_penalty > 0 {
+            return Err(Error("gap extend penalty must be <= 0"));
+        }
+        Ok(())
     }
 }
 
@@ -105,7 +140,7 @@ type Align = fn(
     alt_array: &[u8],
     parameters: Parameters,
     overhang_strategy: OverhangStrategy,
-) -> Option<(Vec<u8>, usize)>;
+) -> Result<(Vec<u8>, usize)>;
 
 pub fn align_avx2() -> Option<Align> {
     if !is_x86_feature_detected!("avx2") {
@@ -116,9 +151,11 @@ pub fn align_avx2() -> Option<Align> {
         alt_array: &[u8],
         parameters: Parameters,
         overhang_strategy: OverhangStrategy,
-    ) -> Option<(Vec<u8>, usize)> {
-        parameters.validate();
-        // TODO: array length validation
+    ) -> Result<(Vec<u8>, usize)> {
+        if ref_array.len() > MAX_SW_SEQUENCE_LENGTH || alt_array.len() > MAX_SW_SEQUENCE_LENGTH {
+            return Err(Error("sequences exceed maximum length"));
+        }
+        parameters.validate()?;
         let ref_len = ref_array.len();
         let alt_len = alt_array.len();
         let cigar_len = 2 * std::cmp::max(ref_len, alt_len);
@@ -142,12 +179,11 @@ pub fn align_avx2() -> Option<Align> {
                 &mut offset,
             )
         };
-        if result == 0 {
-            unsafe { cigar_array.set_len(count as usize) };
-            Some((cigar_array, offset as usize))
-        } else {
-            None
+        if result != 0 {
+            return Err(Error("compute failed"));
         }
+        unsafe { cigar_array.set_len(count as usize) };
+        Ok((cigar_array, offset as usize))
     }
     Some(f)
 }
@@ -165,9 +201,11 @@ pub fn align_avx512() -> Option<Align> {
         alt_array: &[u8],
         parameters: Parameters,
         overhang_strategy: OverhangStrategy,
-    ) -> Option<(Vec<u8>, usize)> {
-        parameters.validate();
-        // TODO: array length validation
+    ) -> Result<(Vec<u8>, usize)> {
+        if ref_array.len() > MAX_SW_SEQUENCE_LENGTH || alt_array.len() > MAX_SW_SEQUENCE_LENGTH {
+            return Err(Error("sequences exceed maximum length"));
+        }
+        parameters.validate()?;
         let ref_len = ref_array.len();
         let alt_len = alt_array.len();
         let cigar_len = 2 * std::cmp::max(ref_len, alt_len);
@@ -191,12 +229,13 @@ pub fn align_avx512() -> Option<Align> {
                 &mut offset,
             )
         };
-        if result == 0 {
-            unsafe { cigar_array.set_len(count as usize) };
-            Some((cigar_array, offset as usize))
-        } else {
-            None
+        match result {
+            SW_SUCCESS => {}
+            SW_MEMORY_ALLOCATION_FAILED => return Err(Error("SW memory allocation failed")),
+            _ => return Err(Error("unknown SW error")),
         }
+        unsafe { cigar_array.set_len(count as usize) };
+        Ok((cigar_array, offset as usize))
     }
     Some(f)
 }
