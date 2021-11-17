@@ -1,22 +1,26 @@
 fn main() {
     println!("cargo:rerun-if-changed=gkl");
     cc::Build::new()
+        .cpp(true)
         .file("gkl/pairhmm/pairhmm_common.cc")
         .file("gkl/smithwaterman/smithwaterman_common.cc")
         .warnings(false)
         .compile("gkl-common");
     cc::Build::new()
+        .cpp(true)
         .file("gkl/pairhmm/avx_impl.cc")
         .flag("-mavx")
         .warnings(false)
         .compile("gkl-pairhmm-avx");
     cc::Build::new()
+        .cpp(true)
         .file("gkl/smithwaterman/avx2_impl.cc")
         .flag("-mavx")
         .flag("-mavx2")
         .warnings(false)
         .compile("gkl-sw-avx2");
     cc::Build::new()
+        .cpp(true)
         .file("gkl/pairhmm/avx512_impl.cc")
         .flag("-mavx")
         .flag("-mavx2")
@@ -26,6 +30,7 @@ fn main() {
         .warnings(false)
         .compile("gkl-pairhmm-avx512");
     cc::Build::new()
+        .cpp(true)
         .file("gkl/smithwaterman/avx512_impl.cc")
         .flag("-mavx")
         .flag("-mavx2")
