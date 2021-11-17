@@ -135,7 +135,7 @@ pub enum OverhangStrategy {
     Ignore = 12,
 }
 
-type Align = fn(
+pub type Align = fn(
     ref_array: &[u8],
     alt_array: &[u8],
     parameters: Parameters,
