@@ -1,3 +1,5 @@
+//! AVX2 and AVX-512 versions of the Smith-Waterman sequence alignment algorithm.
+
 use std::fmt;
 use std::os::raw::c_char;
 
@@ -34,6 +36,7 @@ extern "C" {
     ) -> i32;
 }
 
+/// The error type returned by the alignment function.
 #[derive(Debug, Clone, Copy)]
 pub struct Error(&'static str);
 
@@ -46,6 +49,7 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// The result type returned by the alignment function.
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// limited due to the internal implementation of the native code in C
@@ -56,6 +60,7 @@ const MAXIMUM_SW_MATCH_VALUE: i32 = 64 * 1024; // 2^16
 const SW_SUCCESS: i32 = 0;
 const SW_MEMORY_ALLOCATION_FAILED: i32 = 1;
 
+/// The parameters used by Smith-Waterman alignment.
 #[derive(Debug, Clone, Copy)]
 pub struct Parameters {
     /// Match value.
@@ -80,6 +85,10 @@ pub struct Parameters {
 }
 
 impl Parameters {
+    /// Create a new `Parameters`.
+    ///
+    /// The values are not validated by this call.  Instead, the alignment
+    /// algorithms will validate them before use.
     pub fn new(
         match_value: i32,
         mismatch_penalty: i32,
@@ -94,7 +103,8 @@ impl Parameters {
         }
     }
 
-    fn validate(self) -> Result<()> {
+    /// Validate the parameter values.
+    pub fn validate(self) -> Result<()> {
         if self.match_value < 0 {
             return Err(Error("match value must be >= 0"));
         }
@@ -135,6 +145,9 @@ pub enum OverhangStrategy {
     Ignore = 12,
 }
 
+/// The type of an alignment function.
+///
+/// This is returned by the CPU feature detection functions.
 pub type Align = fn(
     ref_array: &[u8],
     alt_array: &[u8],
@@ -142,6 +155,7 @@ pub type Align = fn(
     overhang_strategy: OverhangStrategy,
 ) -> Result<(Vec<u8>, usize)>;
 
+/// Return the AVX2 alignment function if supported by the CPU features.
 pub fn align_avx2() -> Option<Align> {
     if !is_x86_feature_detected!("avx2") {
         return None;
@@ -188,6 +202,7 @@ pub fn align_avx2() -> Option<Align> {
     Some(f)
 }
 
+/// Return the AVX-512 alignment function if supported by the CPU features.
 pub fn align_avx512() -> Option<Align> {
     if !is_x86_feature_detected!("avx512f")
         || !is_x86_feature_detected!("avx512dq")
@@ -240,6 +255,7 @@ pub fn align_avx512() -> Option<Align> {
     Some(f)
 }
 
+/// Return either the AVX-512 or AVX2 alignment function if supported by the CPU features.
 pub fn align() -> Option<Align> {
     align_avx512().or_else(align_avx2)
 }
