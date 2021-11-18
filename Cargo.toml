@@ -2,6 +2,9 @@
 name = "gkl"
 version = "0.1.0"
 edition = "2018"
+license = "Apache-2.0"
+repository = "https://github.com/philipc/gkl-rs"
+description = "Genomics Kernel Library"
 
 [dependencies]
 
