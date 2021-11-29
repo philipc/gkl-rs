@@ -74,7 +74,7 @@ fn simple() {
 
 #[test]
 fn data_file() {
-    let file = File::open("tests/pairhmm-testdata.txt").unwrap();
+    let file = File::open("tests/data/pairhmm-testdata.txt").unwrap();
     let lines = BufReader::new(file).lines();
     for line in lines {
         let line = line.unwrap();
