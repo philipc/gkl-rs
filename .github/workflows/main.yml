@@ -23,6 +23,18 @@ jobs:
     - name: Test release
       run: cargo test --verbose --release
 
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install rust
+      run: |
+        rustup install stable
+        rustup default stable
+        cargo install cargo-criterion
+    - name: Bench
+      run: cargo criterion --no-run
+
   rustfmt:
     runs-on: ubuntu-latest
     steps:
