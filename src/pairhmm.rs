@@ -3,6 +3,12 @@
 use std::convert::TryInto;
 use std::os::raw::{c_char, c_int};
 
+lazy_static::lazy_static! {
+    static ref FORWARD32: Option<ForwardF32> = forward_f32();
+    static ref FORWARD64: Option<Forward> = forward_f64();
+    static ref LOG10_INITIAL_CONSTANT_32: f32 = (120.0f32).exp2().log10();
+}
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 struct Testcase {
@@ -19,10 +25,8 @@ struct Testcase {
 extern "C" {
     fn compute_avxs(arg1: *mut Testcase) -> f32;
     fn compute_avxd(arg1: *mut Testcase) -> f64;
-    fn compute_avx(arg1: *mut Testcase) -> f64;
     fn compute_avx512s(arg1: *mut Testcase) -> f32;
     fn compute_avx512d(arg1: *mut Testcase) -> f64;
-    fn compute_avx512(arg1: *mut Testcase) -> f64;
     #[link_name = "\u{1}_ZN11ConvertChar15conversionTableE"]
     static mut ConvertChar_conversionTable: [u8; 255usize];
 }
@@ -66,8 +70,8 @@ pub type ForwardF32 = fn(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c:
 /// This is returned by the CPU feature detection functions.
 pub type Forward = fn(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f64;
 
-/// Return the AVX `f32` PairHMM forward function if supported by the CPU features.
-pub fn forward_f32_avx() -> Option<ForwardF32> {
+/// Return the `f32x8` implementation of the PairHMM forward function if supported by the CPU features.
+pub fn forward_f32x8() -> Option<ForwardF32> {
     if !is_x86_feature_detected!("avx") {
         return None;
     }
@@ -79,8 +83,8 @@ pub fn forward_f32_avx() -> Option<ForwardF32> {
     Some(f)
 }
 
-/// Return the AVX `f64` PairHMM forward function if supported by the CPU features.
-pub fn forward_f64_avx() -> Option<Forward> {
+/// Return the `f64x4` implementation of the PairHMM forward function if supported by the CPU features.
+pub fn forward_f64x4() -> Option<Forward> {
     if !is_x86_feature_detected!("avx") {
         return None;
     }
@@ -92,24 +96,8 @@ pub fn forward_f64_avx() -> Option<Forward> {
     Some(f)
 }
 
-/// Return the AVX PairHMM forward function if supported by the CPU features.
-///
-/// This function will first compute using `f32`, and if a precision threshold is not
-/// met then it will repeat the computation using `f64`.
-pub fn forward_avx() -> Option<Forward> {
-    if !is_x86_feature_detected!("avx") {
-        return None;
-    }
-    convert_char_init();
-    fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f64 {
-        let mut tc = testcase(hap, rs, q, i, d, c);
-        unsafe { compute_avx(&mut tc) }
-    }
-    Some(f)
-}
-
-/// Return the AVX-512 `f32` PairHMM forward function if supported by the CPU features.
-pub fn forward_f32_avx512() -> Option<ForwardF32> {
+/// Return the `f32x16` implementation of the PairHMM forward function if supported by the CPU features.
+pub fn forward_f32x16() -> Option<ForwardF32> {
     if !is_x86_feature_detected!("avx512f")
         || !is_x86_feature_detected!("avx512dq")
         || !is_x86_feature_detected!("avx512vl")
@@ -124,8 +112,8 @@ pub fn forward_f32_avx512() -> Option<ForwardF32> {
     Some(f)
 }
 
-/// Return the AVX-512 `f64` PairHMM forward function if supported by the CPU features.
-pub fn forward_f64_avx512() -> Option<Forward> {
+/// Return the `f64x8` implementation of the PairHMM forward function if supported by the CPU features.
+pub fn forward_f64x8() -> Option<Forward> {
     if !is_x86_feature_detected!("avx512f")
         || !is_x86_feature_detected!("avx512dq")
         || !is_x86_feature_detected!("avx512vl")
@@ -140,39 +128,27 @@ pub fn forward_f64_avx512() -> Option<Forward> {
     Some(f)
 }
 
-/// Return the AVX-512 PairHMM forward function if supported by the CPU features.
-///
-/// This function will first compute using `f32`, and if a precision threshold is not
-/// met then it will repeat the computation using `f64`.
-pub fn forward_avx512() -> Option<Forward> {
-    if !is_x86_feature_detected!("avx512f")
-        || !is_x86_feature_detected!("avx512dq")
-        || !is_x86_feature_detected!("avx512vl")
-    {
-        return None;
-    }
-    convert_char_init();
-    fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f64 {
-        let mut tc = testcase(hap, rs, q, i, d, c);
-        unsafe { compute_avx512(&mut tc) }
-    }
-    Some(f)
-}
-
-/// Return either the AVX-512 or AVX `f32` PairHMM forward function if supported by the CPU features.
+/// Return the fastest `f32` PairHMM forward function that is supported by the CPU features.
 pub fn forward_f32() -> Option<ForwardF32> {
-    forward_f32_avx512().or_else(forward_f32_avx)
+    forward_f32x16().or_else(forward_f32x8)
 }
 
-/// Return either the AVX-512 or AVX `f64` PairHMM forward function if supported by the CPU features.
+/// Return the fastest `f64` PairHMM forward function that is supported by the CPU features.
 pub fn forward_f64() -> Option<Forward> {
-    forward_f64_avx512().or_else(forward_f64_avx)
+    forward_f64x8().or_else(forward_f64x4)
 }
 
-/// Return either the AVX-512 or AVX PairHMM forward function if supported by the CPU features.
+/// Use the fastest PairHMM forward function this is supported by the CPU features.
 ///
-/// This function will first compute using `f32`, and if a precision threshold is not
-/// met then it will repeat the computation using `f64`.
-pub fn forward() -> Option<Forward> {
-    forward_avx512().or_else(forward_avx)
+/// This function will first compute using `f32` (if a fast implementation exists),
+/// and if a precision threshold is not met then it will repeat the computation using `f64`.
+pub fn forward(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f64 {
+    if let Some(f) = *FORWARD32 {
+        let result = f(hap, rs, q, i, d, c);
+        if result > -28. - *LOG10_INITIAL_CONSTANT_32 {
+            return result as f64;
+        }
+    }
+    // TODO: provide fallback implemenation
+    FORWARD64.unwrap()(hap, rs, q, i, d, c)
 }
