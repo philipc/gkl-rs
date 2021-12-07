@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 
 use std::cmp;
 use std::fs::File;
@@ -77,4 +77,19 @@ fn bench(c: &mut Criterion) {
         let f = gkl::pairhmm::forward;
         c.bench_function("forward_any", |b| b.iter(|| bench!(f)));
     }
+
+    let mut group = c.benchmark_group("slow");
+    group.sample_size(10).sampling_mode(SamplingMode::Flat);
+
+    {
+        let f = gkl::pairhmm::forward_f32x1();
+        group.bench_function("forward_f32x1", |b| b.iter(|| bench!(f)));
+    }
+
+    {
+        let f = gkl::pairhmm::forward_f64x1();
+        group.bench_function("forward_f64x1", |b| b.iter(|| bench!(f)));
+    }
+
+    group.finish();
 }

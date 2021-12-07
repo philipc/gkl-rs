@@ -6,6 +6,7 @@ fn main() {
         .file("gkl/smithwaterman/smithwaterman_common.cc")
         .warnings(false)
         .compile("gkl-common");
+    #[cfg(feature = "c-avx")]
     cc::Build::new()
         .cpp(true)
         .file("gkl/pairhmm/avx_impl.cc")
@@ -19,6 +20,7 @@ fn main() {
         .flag("-mavx2")
         .warnings(false)
         .compile("gkl-sw-avx2");
+    #[cfg(feature = "c-avx512")]
     cc::Build::new()
         .cpp(true)
         .file("gkl/pairhmm/avx512_impl.cc")
