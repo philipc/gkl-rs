@@ -57,33 +57,24 @@ fn bench(c: &mut Criterion) {
         };
     }
 
-    if let Some(f) = gkl::pairhmm::forward_f32_avx() {
+    if let Some(f) = gkl::pairhmm::forward_f32x8() {
         c.bench_function("forward_f32x8", |b| b.iter(|| bench!(f)));
     }
 
-    if let Some(f) = gkl::pairhmm::forward_f32_avx512() {
+    if let Some(f) = gkl::pairhmm::forward_f32x16() {
         c.bench_function("forward_f32x16", |b| b.iter(|| bench!(f)));
     }
 
-    if let Some(f) = gkl::pairhmm::forward_f64_avx() {
+    if let Some(f) = gkl::pairhmm::forward_f64x4() {
         c.bench_function("forward_f64x4", |b| b.iter(|| bench!(f)));
     }
 
-    if let Some(f) = gkl::pairhmm::forward_f64_avx512() {
+    if let Some(f) = gkl::pairhmm::forward_f64x8() {
         c.bench_function("forward_f64x8", |b| b.iter(|| bench!(f)));
     }
 
-    if let Some(f) = gkl::pairhmm::forward() {
-        c.bench_function("forward_any", |b| {
-            b.iter(|| {
-                for (rs, hap) in &tests {
-                    for (rs, q, i, d, c) in rs.iter() {
-                        for hap in hap.iter() {
-                            f(hap.as_bytes(), rs, q, i, d, c);
-                        }
-                    }
-                }
-            })
-        });
+    {
+        let f = gkl::pairhmm::forward;
+        c.bench_function("forward_any", |b| b.iter(|| bench!(f)));
     }
 }

@@ -38,18 +38,3 @@ double compute_avx512d(testcase *tc)
   double result = compute_full_prob_avx512d<double>(tc);
   return log10(result) - g_ctxd.LOG10_INITIAL_CONSTANT;
 }
-
-double compute_avx512(testcase *tc)
-{
-  double result_final = 0;
-  float result_float = compute_full_prob_avx512s<float>(tc);
-
-  if (result_float < MIN_ACCEPTED) {
-    double result_double = compute_full_prob_avx512d<double>(tc);
-    result_final = log10(result_double) - g_ctxd.LOG10_INITIAL_CONSTANT;
-  }
-  else {
-    result_final = (double)(log10f(result_float) - g_ctxf.LOG10_INITIAL_CONSTANT);
-  }
-  return result_final;
-}
