@@ -38,18 +38,3 @@ double compute_avxd(testcase *tc)
   double result = compute_full_prob_avxd<double>(tc);
   return log10(result) - g_ctxd.LOG10_INITIAL_CONSTANT;
 }
-
-double compute_avx(testcase *tc)
-{
-  double result_final = 0;
-  float result_float = compute_full_prob_avxs<float>(tc);
-
-  if (result_float < MIN_ACCEPTED) {
-    double result_double = compute_full_prob_avxd<double>(tc);
-    result_final = log10(result_double) - g_ctxd.LOG10_INITIAL_CONSTANT;
-  }
-  else {
-    result_final = (double)(log10f(result_float) - g_ctxf.LOG10_INITIAL_CONSTANT);
-  }
-  return result_final;
-}

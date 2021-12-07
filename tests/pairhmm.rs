@@ -4,57 +4,46 @@ use std::io::{BufRead, BufReader};
 
 fn test_one(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8], expected: f64) {
     println!("expected: {}", expected);
-    if let Some(f) = gkl::pairhmm::forward_f32_avx() {
+    if let Some(f) = gkl::pairhmm::forward_f32x8() {
         let fp = f(hap, rs, q, i, d, c);
-        println!("{}", fp);
+        println!("f32x8 {}", fp);
         assert!((fp as f64 - expected).abs() < 1e-5);
     }
 
-    if let Some(f) = gkl::pairhmm::forward_f64_avx() {
+    if let Some(f) = gkl::pairhmm::forward_f64x4() {
         let fp = f(hap, rs, q, i, d, c);
-        println!("{}", fp);
+        println!("f64x4 {}", fp);
         assert!((fp - expected).abs() < 1e-5);
     }
 
-    if let Some(f) = gkl::pairhmm::forward_f32_avx512() {
+    if let Some(f) = gkl::pairhmm::forward_f32x16() {
         let fp = f(hap, rs, q, i, d, c);
-        println!("{}", fp);
+        println!("f32x16 {}", fp);
         assert!((fp as f64 - expected).abs() < 1e-5);
     }
 
-    if let Some(f) = gkl::pairhmm::forward_f64_avx512() {
+    if let Some(f) = gkl::pairhmm::forward_f64x8() {
         let fp = f(hap, rs, q, i, d, c);
-        println!("{}", fp);
+        println!("f64x8 {}", fp);
         assert!((fp - expected).abs() < 1e-5);
     }
 
     if let Some(f) = gkl::pairhmm::forward_f32() {
         let fp = f(hap, rs, q, i, d, c);
-        println!("{}", fp);
+        println!("f32 any {}", fp);
         assert!((fp as f64 - expected).abs() < 1e-5);
     }
 
     if let Some(f) = gkl::pairhmm::forward_f64() {
         let fp = f(hap, rs, q, i, d, c);
-        println!("{}", fp);
+        println!("f64 any {}", fp);
         assert!((fp - expected).abs() < 1e-5);
     }
 
-    if let Some(f) = gkl::pairhmm::forward_avx() {
+    {
+        let f = gkl::pairhmm::forward;
         let fp = f(hap, rs, q, i, d, c);
-        println!("{}", fp);
-        assert!((fp as f64 - expected).abs() < 1e-5);
-    }
-
-    if let Some(f) = gkl::pairhmm::forward_avx512() {
-        let fp = f(hap, rs, q, i, d, c);
-        println!("{}", fp);
-        assert!((fp - expected).abs() < 1e-5);
-    }
-
-    if let Some(f) = gkl::pairhmm::forward() {
-        let fp = f(hap, rs, q, i, d, c);
-        println!("{}", fp);
+        println!("any {}", fp);
         assert!((fp as f64 - expected).abs() < 1e-5);
     }
 }

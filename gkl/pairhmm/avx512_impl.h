@@ -28,7 +28,6 @@
 
 extern "C" float compute_avx512s(testcase*);
 extern "C" double compute_avx512d(testcase*);
-extern "C" double compute_avx512(testcase*);
 
 #endif //AVX512_IMPL_H
 
