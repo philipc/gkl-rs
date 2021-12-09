@@ -28,8 +28,9 @@ pub type Forward = fn(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[
 /// This may be slower than the scalar `f64` implementation due to autovectorization differences.
 pub fn forward_f32x1() -> ForwardF32 {
     fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f32 {
+        let v = crate::vector::F32x1;
         let ctx = &CONTEXT32;
-        unsafe { compute::<f32>(ctx, hap, rs, q, i, d, c) }
+        compute(v, ctx, hap, rs, q, i, d, c)
     }
     f
 }
@@ -39,8 +40,9 @@ pub fn forward_f32x1() -> ForwardF32 {
 /// The compiler may autovectorize this function.
 pub fn forward_f64x1() -> Forward {
     fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f64 {
+        let v = crate::vector::F64x1;
         let ctx = &CONTEXT64;
-        unsafe { compute::<f64>(ctx, hap, rs, q, i, d, c) }
+        compute(v, ctx, hap, rs, q, i, d, c)
     }
     f
 }
@@ -259,7 +261,8 @@ impl<V: Vector> BitMaskVec<V> {
     //
     // Each element corresponds to a row, and each bit corresponds to a column.
     // A bit is set if the row and column match.
-    fn match_col(&mut self, col: usize) -> V::MaskVec {
+    #[inline]
+    fn match_col(&mut self, col: usize) -> V::MaskArray {
         let mut masks = V::MaskArray::default();
         let index = col / V::MASK_BITS;
         // No shift needed for the first row.
@@ -270,7 +273,7 @@ impl<V: Vector> BitMaskVec<V> {
             // The shifts are due to using antidiagonals.
             masks[row] = (mask0 << V::MASK_BITS - row) | (mask1 >> row);
         }
-        V::mask_from_array(masks)
+        masks
     }
 }
 
@@ -287,7 +290,8 @@ impl<V: Vector> BitMaskVec<V> {
 /// Panics when `rs.len() == 0`.
 /// Panics when the length of `q`, `i`, `d` or `c` is less than the length of `rs`.
 #[inline]
-unsafe fn compute<V: Vector>(
+fn compute<V: Vector>(
+    v: V,
     ctx: &Context<V::Float>,
     hap: &[u8],
     rs: &[u8],
@@ -301,7 +305,7 @@ where
 {
     let mut bitmask_vec = BitMaskVec::<V>::new(hap, &ctx.convert);
 
-    let mode = V::set_flush_zero_mode();
+    let mode = v.set_flush_zero_mode();
 
     let shift_len = hap.len() + rs.len() + V::LANES;
     let mut shift_m = vec![V::Float::zero(); shift_len];
@@ -309,13 +313,13 @@ where
     let init_y = ctx.initial_constant / num_traits::NumCast::from(hap.len()).unwrap();
     let mut shift_y = vec![init_y; shift_len];
 
-    let mut m_t_1 = V::zero();
-    let mut m_t_1_y = V::zero();
-    let mut m_t_2 = V::zero();
-    let mut x_t_1 = V::zero();
-    let mut x_t_2 = V::zero();
-    let mut y_t_1 = V::zero();
-    let mut y_t_2 = V::first_element(init_y);
+    let mut m_t_1 = v.zero();
+    let mut m_t_1_y = v.zero();
+    let mut m_t_2 = v.zero();
+    let mut x_t_1 = v.zero();
+    let mut x_t_2 = v.zero();
+    let mut y_t_1 = v.zero();
+    let mut y_t_2 = v.first_element(init_y);
 
     assert!(rs.len() > 0);
     let mut stripe_cnt = (rs.len() + V::LANES - 1) / V::LANES;
@@ -347,76 +351,71 @@ where
             let q = q[row] & 127;
             distm[r] = ctx.ph2pr[q as usize];
         }
-        let p_gapm = V::from_array(p_gapm);
-        let p_mm = V::from_array(p_mm);
-        let p_mx = V::from_array(p_mx);
-        let p_xx = V::from_array(p_xx);
-        let p_my = V::from_array(p_my);
-        let p_yy = V::from_array(p_yy);
-        let distm = V::from_array(distm);
-        let one_distm = V::sub(V::splat(V::Float::one()), distm);
-        let distm = V::div(distm, V::splat(V::Float::from(3)));
+        let p_gapm = v.from_array(p_gapm);
+        let p_mm = v.from_array(p_mm);
+        let p_mx = v.from_array(p_mx);
+        let p_xx = v.from_array(p_xx);
+        let p_my = v.from_array(p_my);
+        let p_yy = v.from_array(p_yy);
+        let distm = v.from_array(distm);
+        let one_distm = v.sub(v.splat(V::Float::one()), distm);
+        let distm = v.div(distm, v.splat(V::Float::from(3)));
 
         bitmask_vec.init_row(&rs[row_base..], &ctx.convert);
         let mut begin_d = 0;
         let max_d = hap.len() + V::LANES - 1;
         while begin_d < max_d {
-            let mut bitmask = bitmask_vec.match_col(begin_d);
+            let mut bitmask = v.mask_from_array(bitmask_vec.match_col(begin_d));
             let num_d = cmp::min(max_d - begin_d, V::MASK_BITS);
             for d in 0..num_d {
                 let shift_idx = begin_d + d;
                 debug_assert!(shift_idx + V::LANES < shift_len);
 
-                let m_t_base = V::add(
-                    V::add(V::mul(m_t_2, p_mm), V::mul(x_t_2, p_gapm)),
-                    V::mul(y_t_2, p_gapm),
+                let m_t_base = v.add(
+                    v.add(v.mul(m_t_2, p_mm), v.mul(x_t_2, p_gapm)),
+                    v.mul(y_t_2, p_gapm),
                 );
                 m_t_2 = m_t_1;
                 x_t_2 = x_t_1;
-                y_t_2 = V::element_shift(
-                    y_t_1,
-                    shift_y.get_unchecked(shift_idx + V::LANES),
-                    shift_y.get_unchecked_mut(shift_idx),
-                );
+                v.element_shift_out(y_t_1, unsafe { shift_y.get_unchecked_mut(shift_idx) });
+                y_t_2 = v.element_shift_in(y_t_1, unsafe {
+                    shift_y.get_unchecked(shift_idx + V::LANES)
+                });
 
-                let distm_sel = V::blend(distm, one_distm, bitmask);
-                bitmask = V::mask_shift(bitmask);
-                let m_t = V::mul(m_t_base, distm_sel);
+                let distm_sel = v.blend(distm, one_distm, bitmask);
+                bitmask = v.mask_shift(bitmask);
+                let m_t = v.mul(m_t_base, distm_sel);
 
-                let x_t = V::add(V::mul(m_t_1, p_mx), V::mul(x_t_1, p_xx));
-                m_t_1 = V::element_shift(
-                    m_t,
-                    shift_m.get_unchecked(shift_idx + V::LANES),
-                    shift_m.get_unchecked_mut(shift_idx),
-                );
+                let x_t = v.add(v.mul(m_t_1, p_mx), v.mul(x_t_1, p_xx));
+                v.element_shift_out(m_t, unsafe { shift_m.get_unchecked_mut(shift_idx) });
+                m_t_1 =
+                    v.element_shift_in(m_t, unsafe { shift_m.get_unchecked(shift_idx + V::LANES) });
 
-                let y_t = V::add(V::mul(m_t_1_y, p_my), V::mul(y_t_1, p_yy));
+                let y_t = v.add(v.mul(m_t_1_y, p_my), v.mul(y_t_1, p_yy));
                 y_t_1 = y_t;
 
-                x_t_1 = V::element_shift(
-                    x_t,
-                    shift_x.get_unchecked(shift_idx + V::LANES),
-                    shift_x.get_unchecked_mut(shift_idx),
-                );
+                v.element_shift_out(x_t, unsafe { shift_x.get_unchecked_mut(shift_idx) });
+                x_t_1 =
+                    v.element_shift_in(x_t, unsafe { shift_x.get_unchecked(shift_idx + V::LANES) });
                 m_t_1_y = m_t;
             }
             begin_d += V::MASK_BITS;
         }
 
-        m_t_1 = V::first_element(shift_m[V::LANES - 1]);
+        m_t_1 = v.first_element(shift_m[V::LANES - 1]);
         m_t_1_y = m_t_1;
-        m_t_2 = V::zero();
-        x_t_1 = V::first_element(shift_x[V::LANES - 1]);
-        x_t_2 = V::zero();
-        y_t_1 = V::zero();
-        y_t_2 = V::zero();
+        m_t_2 = v.zero();
+        x_t_1 = v.first_element(shift_x[V::LANES - 1]);
+        x_t_2 = v.zero();
+        y_t_1 = v.zero();
+        y_t_2 = v.zero();
     }
 
     // The result is the sum of M and X in the last row of the last stripe.
     // Since extracting the last row from the vector can be slow, we sum across
     // all lanes in the stripe, and then extract the last row once at the end.
-    let mut sum_m = V::zero();
-    let mut sum_x = V::zero();
+    let mut sum_m = v.zero();
+    let mut sum_x = v.zero();
     {
         let row_base = stripe_cnt * V::LANES;
         let mut p_gapm = V::FloatArray::default();
@@ -441,53 +440,54 @@ where
             let q = q[row] & 127;
             distm[r] = ctx.ph2pr[q as usize];
         }
-        let p_gapm = V::from_array(p_gapm);
-        let p_mm = V::from_array(p_mm);
-        let p_mx = V::from_array(p_mx);
-        let p_xx = V::from_array(p_xx);
-        let p_my = V::from_array(p_my);
-        let p_yy = V::from_array(p_yy);
-        let distm = V::from_array(distm);
-        let one_distm = V::sub(V::splat(V::Float::one()), distm);
-        let distm = V::div(distm, V::splat(V::Float::from(3)));
+        let p_gapm = v.from_array(p_gapm);
+        let p_mm = v.from_array(p_mm);
+        let p_mx = v.from_array(p_mx);
+        let p_xx = v.from_array(p_xx);
+        let p_my = v.from_array(p_my);
+        let p_yy = v.from_array(p_yy);
+        let distm = v.from_array(distm);
+        let one_distm = v.sub(v.splat(V::Float::one()), distm);
+        let distm = v.div(distm, v.splat(V::Float::from(3)));
 
         bitmask_vec.init_row(&rs[row_base..], &ctx.convert);
         let mut begin_d = 0;
         let max_d = hap.len() + remaining_rows - 1;
         while begin_d < max_d {
-            let mut bitmask = bitmask_vec.match_col(begin_d);
+            let mut bitmask = v.mask_from_array(bitmask_vec.match_col(begin_d));
             let num_d = cmp::min(max_d - begin_d, V::MASK_BITS);
             for d in 0..num_d {
-                let distm_sel = V::blend(distm, one_distm, bitmask);
-                bitmask = V::mask_shift(bitmask);
-                let m_t = V::mul(
-                    V::add(
-                        V::add(V::mul(m_t_2, p_mm), V::mul(x_t_2, p_gapm)),
-                        V::mul(y_t_2, p_gapm),
+                let distm_sel = v.blend(distm, one_distm, bitmask);
+                bitmask = v.mask_shift(bitmask);
+                let m_t = v.mul(
+                    v.add(
+                        v.add(v.mul(m_t_2, p_mm), v.mul(x_t_2, p_gapm)),
+                        v.mul(y_t_2, p_gapm),
                     ),
                     distm_sel,
                 );
-                let x_t = V::add(V::mul(m_t_1, p_mx), V::mul(x_t_1, p_xx));
-                let y_t = V::add(V::mul(m_t_1_y, p_my), V::mul(y_t_1, p_yy));
-                sum_m = V::add(sum_m, m_t);
-                sum_x = V::add(sum_x, x_t);
+                let x_t = v.add(v.mul(m_t_1, p_mx), v.mul(x_t_1, p_xx));
+                let y_t = v.add(v.mul(m_t_1_y, p_my), v.mul(y_t_1, p_yy));
+                sum_m = v.add(sum_m, m_t);
+                sum_x = v.add(sum_x, x_t);
 
                 let shift_idx = begin_d + d + V::LANES;
+                debug_assert!(shift_idx < shift_len);
                 m_t_2 = m_t_1;
-                m_t_1 = V::element_shift_in(m_t, &shift_m[shift_idx]);
+                m_t_1 = v.element_shift_in(m_t, unsafe { shift_m.get_unchecked(shift_idx) });
                 x_t_2 = x_t_1;
-                x_t_1 = V::element_shift_in(x_t, &shift_x[shift_idx]);
-                y_t_2 = V::element_shift_in(y_t_1, &shift_y[shift_idx]);
+                x_t_1 = v.element_shift_in(x_t, unsafe { shift_x.get_unchecked(shift_idx) });
+                y_t_2 = v.element_shift_in(y_t_1, unsafe { shift_y.get_unchecked(shift_idx) });
                 y_t_1 = y_t;
                 m_t_1_y = m_t;
             }
             begin_d += V::MASK_BITS;
         }
     }
-    let sum = V::add(sum_m, sum_x);
-    let sums = V::to_array(sum);
+    let sum = v.add(sum_m, sum_x);
+    let sums = v.to_array(sum);
     let result = sums[remaining_rows - 1].log10() - ctx.log10_initial_constant;
-    V::restore_flush_zero_mode(mode);
+    v.restore_flush_zero_mode(mode);
     result
 }
 
@@ -505,12 +505,13 @@ mod x86_64_avx {
         d: &[u8],
         c: &[u8],
     ) -> f32 {
+        let v = AvxF32x8::new_unchecked();
         let ctx = &CONTEXT32;
-        compute::<AvxF32x8>(ctx, hap, rs, q, i, d, c)
+        compute(v, ctx, hap, rs, q, i, d, c)
     }
 
     pub fn forward_f32x8() -> Option<ForwardF32> {
-        if is_x86_feature_detected!("avx") {
+        if AvxF32x8::new().is_some() {
             fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f32 {
                 unsafe { target_forward_f32x8(hap, rs, q, i, d, c) }
             }
@@ -529,12 +530,13 @@ mod x86_64_avx {
         d: &[u8],
         c: &[u8],
     ) -> f64 {
+        let v = AvxF64x4::new_unchecked();
         let ctx = &CONTEXT64;
-        compute::<AvxF64x4>(ctx, hap, rs, q, i, d, c)
+        compute(v, ctx, hap, rs, q, i, d, c)
     }
 
     pub fn forward_f64x4() -> Option<Forward> {
-        if is_x86_feature_detected!("avx") {
+        if AvxF64x4::new().is_some() {
             fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f64 {
                 unsafe { target_forward_f64x4(hap, rs, q, i, d, c) }
             }
@@ -560,13 +562,14 @@ mod x86_64_avx512 {
         d: &[u8],
         c: &[u8],
     ) -> f32 {
+        let v = AvxF32x16::new_unchecked();
         let ctx = &CONTEXT32;
-        compute::<AvxF32x16>(ctx, hap, rs, q, i, d, c)
+        compute(v, ctx, hap, rs, q, i, d, c)
     }
 
     #[cfg(feature = "nightly")]
     pub fn forward_f32x16() -> Option<ForwardF32> {
-        if is_x86_feature_detected!("avx512f") {
+        if AvxF32x16::new().is_some() {
             fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f32 {
                 unsafe { target_forward_f32x16(hap, rs, q, i, d, c) }
             }
@@ -586,13 +589,14 @@ mod x86_64_avx512 {
         d: &[u8],
         c: &[u8],
     ) -> f64 {
+        let v = AvxF64x8::new_unchecked();
         let ctx = &CONTEXT64;
-        compute::<AvxF64x8>(ctx, hap, rs, q, i, d, c)
+        compute(v, ctx, hap, rs, q, i, d, c)
     }
 
     #[cfg(feature = "nightly")]
     pub fn forward_f64x8() -> Option<Forward> {
-        if is_x86_feature_detected!("avx512f") {
+        if AvxF64x8::new().is_some() {
             fn f(hap: &[u8], rs: &[u8], q: &[u8], i: &[u8], d: &[u8], c: &[u8]) -> f64 {
                 unsafe { target_forward_f64x8(hap, rs, q, i, d, c) }
             }
