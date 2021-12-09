@@ -199,10 +199,15 @@ impl<T: ContextFloat> Context<T> {
     }
 }
 
+/// Column bitmask streams.
+///
+/// Precomputes a column bitmask stream for each possible row value.
+/// Then when reading, we simply need to index into the correct stream.
 struct BitMaskVec<V: Vector> {
-    rows: V::IndexArray,
-    shift: V::MaskArray,
+    // The precomputed column bitmask streams.
     col_masks: Vec<[V::Mask; 5]>,
+    // The stream index to use for each lane while reading the streams.
+    rows: V::IndexArray,
 }
 
 impl<V: Vector> BitMaskVec<V> {
@@ -215,16 +220,18 @@ impl<V: Vector> BitMaskVec<V> {
                 V::Mask::default(),
                 V::Mask::default(),
                 V::Mask::default(),
+                // The all-ones stream.
                 !V::Mask::default()
             ];
-            (max_d + V::MASK_BITS - 1) / V::MASK_BITS
+            // Additional `+ 1` allows for antidiagonal handling at start of row.
+            (max_d + V::MASK_BITS - 1) / V::MASK_BITS + 1
         ];
         for (col, hap) in hap.iter().copied().enumerate() {
-            let masks = &mut col_masks[col / V::MASK_BITS];
+            let masks = &mut col_masks[col / V::MASK_BITS + 1];
             let bit = V::Mask::from(1) << (V::MASK_BITS - 1 - col % V::MASK_BITS);
             let hap = convert[hap as usize];
             if hap == 4 {
-                for j in 0..5 {
+                for j in 0..4 {
                     masks[j] |= bit;
                 }
             } else {
@@ -232,17 +239,16 @@ impl<V: Vector> BitMaskVec<V> {
             }
         }
         BitMaskVec {
-            rows: V::IndexArray::default(),
-            shift: V::MaskArray::default(),
             col_masks,
+            rows: V::IndexArray::default(),
         }
     }
 
+    // Convert the row values into stream indices.
     fn init_row(&mut self, rs: &[u8], convert: &[u8; 256]) {
         for (i, rs) in rs.iter().take(V::LANES).copied().enumerate() {
             self.rows[i] = convert[rs as usize];
         }
-        self.shift = V::MaskArray::default();
     }
 
     // Build a mask for use with Vector::blend to select between
@@ -253,14 +259,16 @@ impl<V: Vector> BitMaskVec<V> {
     //
     // Each element corresponds to a row, and each bit corresponds to a column.
     // A bit is set if the row and column match.
-    fn match_col(&mut self, index: usize) -> V::MaskVec {
+    fn match_col(&mut self, col: usize) -> V::MaskVec {
         let mut masks = V::MaskArray::default();
-        masks[0] = self.col_masks[index][self.rows[0] as usize];
+        let index = col / V::MASK_BITS;
+        // No shift needed for the first row.
+        masks[0] = self.col_masks[index + 1][self.rows[0] as usize];
         for row in 1..V::LANES {
-            let mask = self.col_masks[index][self.rows[row] as usize];
+            let mask0 = self.col_masks[index][self.rows[row] as usize];
+            let mask1 = self.col_masks[index + 1][self.rows[row] as usize];
             // The shifts are due to using antidiagonals.
-            masks[row] = (mask >> row) | self.shift[row];
-            self.shift[row] = mask << (V::MASK_BITS - row);
+            masks[row] = (mask0 << V::MASK_BITS - row) | (mask1 >> row);
         }
         V::mask_from_array(masks)
     }
@@ -353,7 +361,7 @@ where
         let mut begin_d = 0;
         let max_d = hap.len() + V::LANES - 1;
         while begin_d < max_d {
-            let mut bitmask = bitmask_vec.match_col(begin_d / V::MASK_BITS);
+            let mut bitmask = bitmask_vec.match_col(begin_d);
             let num_d = cmp::min(max_d - begin_d, V::MASK_BITS);
             for d in 0..num_d {
                 let shift_idx = begin_d + d;
@@ -447,7 +455,7 @@ where
         let mut begin_d = 0;
         let max_d = hap.len() + remaining_rows - 1;
         while begin_d < max_d {
-            let mut bitmask = bitmask_vec.match_col(begin_d / V::MASK_BITS);
+            let mut bitmask = bitmask_vec.match_col(begin_d);
             let num_d = cmp::min(max_d - begin_d, V::MASK_BITS);
             for d in 0..num_d {
                 let distm_sel = V::blend(distm, one_distm, bitmask);
