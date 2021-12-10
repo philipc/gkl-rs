@@ -313,13 +313,20 @@ where
     let init_y = ctx.initial_constant / num_traits::NumCast::from(hap.len()).unwrap();
     let mut shift_y = vec![init_y; shift_len];
 
+    // M on shifted antidiagonal from 2 steps ago. (i-1, j-1)
+    let mut m_t_2_s = v.zero();
+    // X on shifted antidiagonal from 2 steps ago. (i-1, j-1)
+    let mut x_t_2_s = v.zero();
+    // Y on shifted antidiagonal from 2 steps ago. (i-1, j-1)
+    let mut y_t_2_s = v.first_element(init_y);
+    // M on shifted antidiagonal from 1 step ago. (i-1, j)
+    let mut m_t_1_s = v.zero();
+    // X on shifted antidiagonal from 1 step ago. (i-1, j)
+    let mut x_t_1_s = v.zero();
+    // M on antidiagonal from 1 step ago. (i, j-1)
     let mut m_t_1 = v.zero();
-    let mut m_t_1_y = v.zero();
-    let mut m_t_2 = v.zero();
-    let mut x_t_1 = v.zero();
-    let mut x_t_2 = v.zero();
+    // Y on antidiagonal from 1 step ago. (i, j-1)
     let mut y_t_1 = v.zero();
-    let mut y_t_2 = v.first_element(init_y);
 
     assert!(rs.len() > 0);
     let mut stripe_cnt = (rs.len() + V::LANES - 1) / V::LANES;
@@ -372,13 +379,13 @@ where
                 debug_assert!(shift_idx + V::LANES < shift_len);
 
                 let m_t_base = v.add(
-                    v.add(v.mul(m_t_2, p_mm), v.mul(x_t_2, p_gapm)),
-                    v.mul(y_t_2, p_gapm),
+                    v.add(v.mul(m_t_2_s, p_mm), v.mul(x_t_2_s, p_gapm)),
+                    v.mul(y_t_2_s, p_gapm),
                 );
-                m_t_2 = m_t_1;
-                x_t_2 = x_t_1;
+                m_t_2_s = m_t_1_s;
+                x_t_2_s = x_t_1_s;
                 v.element_shift_out(y_t_1, unsafe { shift_y.get_unchecked_mut(shift_idx) });
-                y_t_2 = v.element_shift_in(y_t_1, unsafe {
+                y_t_2_s = v.element_shift_in(y_t_1, unsafe {
                     shift_y.get_unchecked(shift_idx + V::LANES)
                 });
 
@@ -386,29 +393,29 @@ where
                 bitmask = v.mask_shift(bitmask);
                 let m_t = v.mul(m_t_base, distm_sel);
 
-                let x_t = v.add(v.mul(m_t_1, p_mx), v.mul(x_t_1, p_xx));
+                let x_t = v.add(v.mul(m_t_1_s, p_mx), v.mul(x_t_1_s, p_xx));
                 v.element_shift_out(m_t, unsafe { shift_m.get_unchecked_mut(shift_idx) });
-                m_t_1 =
+                m_t_1_s =
                     v.element_shift_in(m_t, unsafe { shift_m.get_unchecked(shift_idx + V::LANES) });
 
-                let y_t = v.add(v.mul(m_t_1_y, p_my), v.mul(y_t_1, p_yy));
+                let y_t = v.add(v.mul(m_t_1, p_my), v.mul(y_t_1, p_yy));
                 y_t_1 = y_t;
+                m_t_1 = m_t;
 
                 v.element_shift_out(x_t, unsafe { shift_x.get_unchecked_mut(shift_idx) });
-                x_t_1 =
+                x_t_1_s =
                     v.element_shift_in(x_t, unsafe { shift_x.get_unchecked(shift_idx + V::LANES) });
-                m_t_1_y = m_t;
             }
             begin_d += V::MASK_BITS;
         }
 
-        m_t_1 = v.first_element(shift_m[V::LANES - 1]);
-        m_t_1_y = m_t_1;
-        m_t_2 = v.zero();
-        x_t_1 = v.first_element(shift_x[V::LANES - 1]);
-        x_t_2 = v.zero();
+        m_t_2_s = v.zero();
+        x_t_2_s = v.zero();
+        y_t_2_s = v.zero();
+        m_t_1_s = v.first_element(shift_m[V::LANES - 1]);
+        x_t_1_s = v.first_element(shift_x[V::LANES - 1]);
+        m_t_1 = m_t_1_s;
         y_t_1 = v.zero();
-        y_t_2 = v.zero();
     }
 
     // The result is the sum of M and X in the last row of the last stripe.
@@ -461,25 +468,25 @@ where
                 bitmask = v.mask_shift(bitmask);
                 let m_t = v.mul(
                     v.add(
-                        v.add(v.mul(m_t_2, p_mm), v.mul(x_t_2, p_gapm)),
-                        v.mul(y_t_2, p_gapm),
+                        v.add(v.mul(m_t_2_s, p_mm), v.mul(x_t_2_s, p_gapm)),
+                        v.mul(y_t_2_s, p_gapm),
                     ),
                     distm_sel,
                 );
-                let x_t = v.add(v.mul(m_t_1, p_mx), v.mul(x_t_1, p_xx));
-                let y_t = v.add(v.mul(m_t_1_y, p_my), v.mul(y_t_1, p_yy));
+                let x_t = v.add(v.mul(m_t_1_s, p_mx), v.mul(x_t_1_s, p_xx));
+                let y_t = v.add(v.mul(m_t_1, p_my), v.mul(y_t_1, p_yy));
                 sum_m = v.add(sum_m, m_t);
                 sum_x = v.add(sum_x, x_t);
 
                 let shift_idx = begin_d + d + V::LANES;
                 debug_assert!(shift_idx < shift_len);
-                m_t_2 = m_t_1;
-                m_t_1 = v.element_shift_in(m_t, unsafe { shift_m.get_unchecked(shift_idx) });
-                x_t_2 = x_t_1;
-                x_t_1 = v.element_shift_in(x_t, unsafe { shift_x.get_unchecked(shift_idx) });
-                y_t_2 = v.element_shift_in(y_t_1, unsafe { shift_y.get_unchecked(shift_idx) });
+                m_t_2_s = m_t_1_s;
+                m_t_1_s = v.element_shift_in(m_t, unsafe { shift_m.get_unchecked(shift_idx) });
+                m_t_1 = m_t;
+                x_t_2_s = x_t_1_s;
+                x_t_1_s = v.element_shift_in(x_t, unsafe { shift_x.get_unchecked(shift_idx) });
+                y_t_2_s = v.element_shift_in(y_t_1, unsafe { shift_y.get_unchecked(shift_idx) });
                 y_t_1 = y_t;
-                m_t_1_y = m_t;
             }
             begin_d += V::MASK_BITS;
         }
