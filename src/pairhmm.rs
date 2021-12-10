@@ -414,7 +414,7 @@ where
         y_t_2_s = v.zero();
         m_t_1_s = v.first_element(shift_m[V::LANES - 1]);
         x_t_1_s = v.first_element(shift_x[V::LANES - 1]);
-        m_t_1 = m_t_1_s;
+        m_t_1 = v.zero();
         y_t_1 = v.zero();
     }
 
