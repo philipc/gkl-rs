@@ -538,7 +538,51 @@ mod x86_64_avx {
             mem::transmute(x)
             */
 
+            // TODO: Sometimes this is generating an extra blend.
+            //
+            // expected instructions: (input x is ymm15)
+            // vmovsd	(%rsi,%rax,8), %xmm7
+            // vinsertf128	$1, %xmm15, %ymm7, %ymm7
+            // vshufpd	$4, %ymm15, %ymm7, %ymm10
+            //
+            // actual instructions: (input x is ymm15)
+            // vmovsd	(%rsi,%rax,8), %xmm0
+            // vinsertf128	$1, %xmm15, %ymm0, %ymm3
+            // vshufpd	$4, %ymm15, %ymm3, %ymm3
+            // vblendpd	$1, %ymm0, %ymm3, %ymm0
+            //
+            // Workaround with inline assembly for now.
+            cfg_if::cfg_if! {
+                if #[cfg(feature = "nightly")] {
+                    #[target_feature(enable = "avx")]
+                    #[inline]
+                    unsafe fn f(x: __m256d, shift_in: &f64) -> __m256d {
+                        let shift_in = _mm_load_sd(shift_in);
+                        let y;
+                        asm!(
+                            "vinsertf128 {0:y}, {0:y}, {1:x}, 1",
+                            "vshufpd {2}, {0:y}, {1}, 4",
+                            inout(xmm_reg) shift_in => _,
+                            in(ymm_reg) x,
+                            out(ymm_reg) y,
+                        );
+                        y
+                    }
+                    unsafe { f(x, shift_in) }
+                } else {
+                    unsafe {
+                        let shift_in = _mm256_castpd128_pd256(_mm_load_sd(shift_in));
+                        // let y = [*shift_in, 0, x[0], x[1]];
+                        let y = _mm256_insertf128_pd::<1>(shift_in, _mm256_extractf128_pd::<0>(x));
+                        // [y[0], x[0], y[3], x[2]]
+                        _mm256_shuffle_pd::<0b0100>(y, x)
+                    }
+                }
+            }
+
             // Rotate the lanes, then replace the lowest lanes.
+            // This sometimes gives the same instructions as above, but otherwise is slower.
+            /*
             unsafe {
                 let x = _mm256_permute_pd::<0b01_01>(x);
                 let mut x: [__m128d; 2] = mem::transmute(x);
@@ -546,6 +590,7 @@ mod x86_64_avx {
                 x[0] = _mm_move_sd(x[0], _mm_load_sd(shift_in));
                 mem::transmute(x)
             }
+            */
 
             /* Blend is slower in this case:
             let x = _mm256_permute_pd::<0b01_01>(x);
