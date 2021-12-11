@@ -1,7 +1,7 @@
 //! PairHMM forward algorithm.
 use crate::vector::Vector;
 use num_traits::{Float, One, Zero};
-use std::{cmp, mem};
+use std::cmp;
 
 lazy_static::lazy_static! {
     static ref FORWARD32: Option<ForwardF32> = forward_f32();
@@ -148,12 +148,9 @@ struct Context<T: ContextFloat> {
     log10_initial_constant: T,
     convert: [u8; 256],
     ph2pr: [T; 128],
-    match_to_match_prob: Vec<T>,
 }
 
 impl<T: ContextFloat> Context<T> {
-    const MAX_QUAL: u8 = 127;
-
     fn new() -> Self {
         let initial_constant = T::INITIAL_CONSTANT_EXP.exp2();
         let log10_initial_constant = initial_constant.log10();
@@ -170,34 +167,16 @@ impl<T: ContextFloat> Context<T> {
             ph2pr[x as usize] = T::TEN.powf(-(<T as From<u8>>::from(x) / T::TEN));
         }
 
-        let inv_ln10 = T::one() / T::TEN.ln();
-        let mut match_to_match_prob =
-            Vec::with_capacity(((Self::MAX_QUAL as usize + 1) * (Self::MAX_QUAL as usize + 2)) / 2);
-        for i in 0..=Self::MAX_QUAL {
-            for j in 0..=i {
-                let a = <T as num_traits::NumCast>::from(-0.1f32).unwrap() * From::from(i);
-                let b = <T as num_traits::NumCast>::from(-0.1f32).unwrap() * From::from(j);
-                let sum = T::TEN.powf(a) + T::TEN.powf(b);
-                let match_to_match_log10 = (-T::min(T::one(), sum)).ln_1p() * inv_ln10;
-                match_to_match_prob.push(T::TEN.powf(match_to_match_log10));
-            }
-        }
-
         Context {
             convert,
             initial_constant,
             log10_initial_constant,
             ph2pr,
-            match_to_match_prob,
         }
     }
 
-    fn match_to_match_prob(&self, mut a: u8, mut b: u8) -> T {
-        if a > b {
-            mem::swap(&mut a, &mut b);
-        }
-        debug_assert!(b <= Self::MAX_QUAL);
-        self.match_to_match_prob[((b as usize * (b as usize + 1)) / 2) + a as usize]
+    fn ph2pr(&self, ph: u8) -> T {
+        self.ph2pr[(ph & 127) as usize]
     }
 }
 
@@ -345,18 +324,17 @@ where
         let mut distm = V::FloatArray::default();
         for r in 0..V::LANES {
             let row = row_base + r;
-            let i = i[row] & 127;
-            let d = d[row] & 127;
-            let c = c[row] & 127;
-            p_gapm[r] = V::Float::one() - ctx.ph2pr[c as usize];
-            p_mm[r] = ctx.match_to_match_prob(i, d);
-            p_mx[r] = ctx.ph2pr[i as usize];
-            p_xx[r] = ctx.ph2pr[c as usize];
-            p_my[r] = ctx.ph2pr[d as usize];
-            p_yy[r] = ctx.ph2pr[c as usize];
-
-            let q = q[row] & 127;
-            distm[r] = ctx.ph2pr[q as usize];
+            let i = ctx.ph2pr(i[row]);
+            let d = ctx.ph2pr(d[row]);
+            let c = ctx.ph2pr(c[row]);
+            let q = ctx.ph2pr(q[row]);
+            p_mx[r] = i;
+            p_my[r] = d;
+            p_mm[r] = V::Float::one() - (i + d);
+            p_xx[r] = c;
+            p_yy[r] = c;
+            p_gapm[r] = V::Float::one() - c;
+            distm[r] = q;
         }
         let p_gapm = v.from_array(p_gapm);
         let p_mm = v.from_array(p_mm);
@@ -434,18 +412,17 @@ where
         let mut distm = V::FloatArray::default();
         for r in 0..remaining_rows {
             let row = row_base + r;
-            let i = i[row] & 127;
-            let d = d[row] & 127;
-            let c = c[row] & 127;
-            p_gapm[r] = V::Float::one() - ctx.ph2pr[c as usize];
-            p_mm[r] = ctx.match_to_match_prob(i, d);
-            p_mx[r] = ctx.ph2pr[i as usize];
-            p_xx[r] = ctx.ph2pr[c as usize];
-            p_my[r] = ctx.ph2pr[d as usize];
-            p_yy[r] = ctx.ph2pr[c as usize];
-
-            let q = q[row] & 127;
-            distm[r] = ctx.ph2pr[q as usize];
+            let i = ctx.ph2pr(i[row]);
+            let d = ctx.ph2pr(d[row]);
+            let c = ctx.ph2pr(c[row]);
+            let q = ctx.ph2pr(q[row]);
+            p_mx[r] = i;
+            p_my[r] = d;
+            p_mm[r] = V::Float::one() - (i + d);
+            p_xx[r] = c;
+            p_yy[r] = c;
+            p_gapm[r] = V::Float::one() - c;
+            distm[r] = q;
         }
         let p_gapm = v.from_array(p_gapm);
         let p_mm = v.from_array(p_mm);
