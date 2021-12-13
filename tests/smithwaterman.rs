@@ -190,7 +190,7 @@ fn substring_match() {
         ref_array,
         alt_array,
         parameters,
-        OverhangStrategy::InDel,
+        OverhangStrategy::Indel,
         0,
         b"3D5M",
     );
@@ -198,7 +198,7 @@ fn substring_match() {
         ref_array,
         alt_array,
         parameters,
-        OverhangStrategy::LeadingInDel,
+        OverhangStrategy::LeadingIndel,
         0,
         b"3D5M",
     );
@@ -229,7 +229,7 @@ fn substring_match_long() {
         ref_array,
         alt_array,
         parameters,
-        OverhangStrategy::InDel,
+        OverhangStrategy::Indel,
         0,
         b"1M358D6M29D",
     );
@@ -237,7 +237,7 @@ fn substring_match_long() {
         ref_array,
         alt_array,
         parameters,
-        OverhangStrategy::LeadingInDel,
+        OverhangStrategy::LeadingIndel,
         0,
         b"1M1D6M",
     );

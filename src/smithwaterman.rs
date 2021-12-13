@@ -132,14 +132,14 @@ pub enum OverhangStrategy {
     SoftClip = 9,
 
     /// Treat the overhangs as proper insertions/deletions.
-    InDel = 10,
+    Indel = 10,
 
     /// Treat the overhangs as proper insertions/deletions for leading (but not trailing) overhangs.
     ///
     /// This is useful e.g. when we want to merge dangling tails in an assembly graph: because we don't
     /// expect the dangling tail to reach the end of the reference path we are okay ignoring trailing
     /// deletions - but leading indels are still very much relevant.
-    LeadingInDel = 11,
+    LeadingIndel = 11,
 
     /// Just ignore the overhangs.
     Ignore = 12,
