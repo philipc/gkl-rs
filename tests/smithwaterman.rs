@@ -8,13 +8,13 @@ fn test_one(
     expected_offset: usize,
     expected: &[u8],
 ) {
-    if let Some(f) = gkl::smithwaterman::align_avx2() {
+    if let Some(f) = gkl::smithwaterman::align_i32x8() {
         let (cigar, offset) = f(ref_array, alt_array, parameters, overhang).unwrap();
         assert_eq!(cigar, expected);
         assert_eq!(offset, expected_offset);
     }
 
-    if let Some(f) = gkl::smithwaterman::align_avx512() {
+    if let Some(f) = gkl::smithwaterman::align_i32x16() {
         let (cigar, offset) = f(ref_array, alt_array, parameters, overhang).unwrap();
         assert_eq!(cigar, expected);
         assert_eq!(offset, expected_offset);
@@ -165,10 +165,10 @@ fn identical_alignments_with_differing_flank_lengths() {
             }
         }
     };
-    if let Some(f) = gkl::smithwaterman::align_avx2() {
+    if let Some(f) = gkl::smithwaterman::align_i32x8() {
         test_one(f);
     }
-    if let Some(f) = gkl::smithwaterman::align_avx512() {
+    if let Some(f) = gkl::smithwaterman::align_i32x16() {
         test_one(f);
     }
 }

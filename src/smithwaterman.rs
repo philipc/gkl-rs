@@ -1,40 +1,6 @@
 //! AVX2 and AVX-512 versions of the Smith-Waterman sequence alignment algorithm.
 
 use std::fmt;
-use std::os::raw::c_char;
-
-extern "C" {
-    fn runSWOnePairBT_avx2(
-        match_: i32,
-        mismatch: i32,
-        open: i32,
-        extend: i32,
-        seq1: *const u8,
-        seq2: *const u8,
-        len1: i16,
-        len2: i16,
-        overhangStrategy: i8,
-        cigarArray: *mut ::std::os::raw::c_char,
-        cigarLen: i32,
-        cigarCount: *mut u32,
-        offset: *mut i32,
-    ) -> i32;
-    fn runSWOnePairBT_avx512(
-        match_: i32,
-        mismatch: i32,
-        open: i32,
-        extend: i32,
-        seq1: *const u8,
-        seq2: *const u8,
-        len1: i16,
-        len2: i16,
-        overhangStrategy: i8,
-        cigarArray: *mut ::std::os::raw::c_char,
-        cigarLen: i32,
-        cigarCount: *mut u32,
-        offset: *mut i32,
-    ) -> i32;
-}
 
 /// The error type returned by the alignment function.
 #[derive(Debug, Clone, Copy)]
@@ -56,9 +22,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 const MAX_SW_SEQUENCE_LENGTH: usize = 32 * 1024 - 1; // 2^15 - 1
 /// prevents integer overflow on the diagonal of the scoring matrix
 const MAXIMUM_SW_MATCH_VALUE: i32 = 64 * 1024; // 2^16
-
-const SW_SUCCESS: i32 = 0;
-const SW_MEMORY_ALLOCATION_FAILED: i32 = 1;
 
 /// The parameters used by Smith-Waterman alignment.
 #[derive(Debug, Clone, Copy)]
@@ -155,107 +118,175 @@ pub type Align = fn(
     overhang_strategy: OverhangStrategy,
 ) -> Result<(Vec<u8>, usize)>;
 
-/// Return the AVX2 alignment function if supported by the CPU features.
-pub fn align_avx2() -> Option<Align> {
-    if !is_x86_feature_detected!("avx2") {
-        return None;
-    }
-    fn f(
-        ref_array: &[u8],
-        alt_array: &[u8],
-        parameters: Parameters,
-        overhang_strategy: OverhangStrategy,
-    ) -> Result<(Vec<u8>, usize)> {
-        if ref_array.len() > MAX_SW_SEQUENCE_LENGTH || alt_array.len() > MAX_SW_SEQUENCE_LENGTH {
-            return Err(Error("sequences exceed maximum length"));
+/// Return the `32x8` implementation of the alignment function if supported by the CPU features.
+pub fn align_i32x8() -> Option<Align> {
+    cfg_if::cfg_if! {
+        if #[cfg(all(target_arch = "x86_64", feature = "c-avx"))] {
+            c::align_i32x8()
+        } else {
+            None
         }
-        parameters.validate()?;
-        let ref_len = ref_array.len();
-        let alt_len = alt_array.len();
-        let cigar_len = 2 * std::cmp::max(ref_len, alt_len);
-        let mut cigar_array = Vec::with_capacity(cigar_len);
-        let mut count = 0u32;
-        let mut offset = 0i32;
-        let result = unsafe {
-            runSWOnePairBT_avx2(
-                parameters.match_value,
-                parameters.mismatch_penalty,
-                parameters.gap_open_penalty,
-                parameters.gap_extend_penalty,
-                ref_array.as_ptr() as _,
-                alt_array.as_ptr() as _,
-                ref_len as i16,
-                alt_len as i16,
-                overhang_strategy as i8,
-                cigar_array.as_mut_ptr() as *mut c_char,
-                cigar_len as i32,
-                &mut count,
-                &mut offset,
-            )
-        };
-        if result != 0 {
-            return Err(Error("compute failed"));
-        }
-        unsafe { cigar_array.set_len(count as usize) };
-        Ok((cigar_array, offset as usize))
     }
-    Some(f)
 }
 
-/// Return the AVX-512 alignment function if supported by the CPU features.
-pub fn align_avx512() -> Option<Align> {
-    if !is_x86_feature_detected!("avx512f")
-        || !is_x86_feature_detected!("avx512dq")
-        || !is_x86_feature_detected!("avx512vl")
-        || !is_x86_feature_detected!("avx512bw")
-    {
-        return None;
-    }
-    fn f(
-        ref_array: &[u8],
-        alt_array: &[u8],
-        parameters: Parameters,
-        overhang_strategy: OverhangStrategy,
-    ) -> Result<(Vec<u8>, usize)> {
-        if ref_array.len() > MAX_SW_SEQUENCE_LENGTH || alt_array.len() > MAX_SW_SEQUENCE_LENGTH {
-            return Err(Error("sequences exceed maximum length"));
+/// Return the `32x16` implementation of the alignment function if supported by the CPU features.
+pub fn align_i32x16() -> Option<Align> {
+    cfg_if::cfg_if! {
+        if #[cfg(all(target_arch = "x86_64", feature = "c-avx512"))] {
+            c::align_i32x16()
+        } else {
+            None
         }
-        parameters.validate()?;
-        let ref_len = ref_array.len();
-        let alt_len = alt_array.len();
-        let cigar_len = 2 * std::cmp::max(ref_len, alt_len);
-        let mut cigar_array = Vec::with_capacity(cigar_len);
-        let mut count = 0u32;
-        let mut offset = 0i32;
-        let result = unsafe {
-            runSWOnePairBT_avx512(
-                parameters.match_value,
-                parameters.mismatch_penalty,
-                parameters.gap_open_penalty,
-                parameters.gap_extend_penalty,
-                ref_array.as_ptr() as _,
-                alt_array.as_ptr() as _,
-                ref_len as i16,
-                alt_len as i16,
-                overhang_strategy as i8,
-                cigar_array.as_mut_ptr() as *mut c_char,
-                cigar_len as i32,
-                &mut count,
-                &mut offset,
-            )
-        };
-        match result {
-            SW_SUCCESS => {}
-            SW_MEMORY_ALLOCATION_FAILED => return Err(Error("SW memory allocation failed")),
-            _ => return Err(Error("unknown SW error")),
-        }
-        unsafe { cigar_array.set_len(count as usize) };
-        Ok((cigar_array, offset as usize))
     }
-    Some(f)
 }
 
-/// Return either the AVX-512 or AVX2 alignment function if supported by the CPU features.
+/// Return the fastest alignment function that is supported by the CPU features.
 pub fn align() -> Option<Align> {
-    align_avx512().or_else(align_avx2)
+    align_i32x16().or_else(align_i32x8)
+}
+
+#[cfg(all(target_arch = "x86_64", feature = "c-core"))]
+mod c {
+    use super::{Align, Error, OverhangStrategy, Parameters, Result};
+    use std::os::raw::c_char;
+
+    const SW_SUCCESS: i32 = 0;
+    const SW_MEMORY_ALLOCATION_FAILED: i32 = 1;
+
+    extern "C" {
+        fn runSWOnePairBT_avx2(
+            match_: i32,
+            mismatch: i32,
+            open: i32,
+            extend: i32,
+            seq1: *const u8,
+            seq2: *const u8,
+            len1: i16,
+            len2: i16,
+            overhangStrategy: i8,
+            cigarArray: *mut ::std::os::raw::c_char,
+            cigarLen: i32,
+            cigarCount: *mut u32,
+            offset: *mut i32,
+        ) -> i32;
+        fn runSWOnePairBT_avx512(
+            match_: i32,
+            mismatch: i32,
+            open: i32,
+            extend: i32,
+            seq1: *const u8,
+            seq2: *const u8,
+            len1: i16,
+            len2: i16,
+            overhangStrategy: i8,
+            cigarArray: *mut ::std::os::raw::c_char,
+            cigarLen: i32,
+            cigarCount: *mut u32,
+            offset: *mut i32,
+        ) -> i32;
+    }
+
+    /// Return the AVX2 alignment function if supported by the CPU features.
+    pub fn align_i32x8() -> Option<Align> {
+        if !is_x86_feature_detected!("avx2") {
+            return None;
+        }
+        fn f(
+            ref_array: &[u8],
+            alt_array: &[u8],
+            parameters: Parameters,
+            overhang_strategy: OverhangStrategy,
+        ) -> Result<(Vec<u8>, usize)> {
+            if ref_array.len() > super::MAX_SW_SEQUENCE_LENGTH
+                || alt_array.len() > super::MAX_SW_SEQUENCE_LENGTH
+            {
+                return Err(Error("sequences exceed maximum length"));
+            }
+            parameters.validate()?;
+            let ref_len = ref_array.len();
+            let alt_len = alt_array.len();
+            let cigar_len = 2 * std::cmp::max(ref_len, alt_len);
+            let mut cigar_array = Vec::with_capacity(cigar_len);
+            let mut count = 0u32;
+            let mut offset = 0i32;
+            let result = unsafe {
+                runSWOnePairBT_avx2(
+                    parameters.match_value,
+                    parameters.mismatch_penalty,
+                    parameters.gap_open_penalty,
+                    parameters.gap_extend_penalty,
+                    ref_array.as_ptr() as _,
+                    alt_array.as_ptr() as _,
+                    ref_len as i16,
+                    alt_len as i16,
+                    overhang_strategy as i8,
+                    cigar_array.as_mut_ptr() as *mut c_char,
+                    cigar_len as i32,
+                    &mut count,
+                    &mut offset,
+                )
+            };
+            if result != 0 {
+                return Err(Error("compute failed"));
+            }
+            unsafe { cigar_array.set_len(count as usize) };
+            Ok((cigar_array, offset as usize))
+        }
+        Some(f)
+    }
+
+    /// Return the AVX-512 alignment function if supported by the CPU features.
+    pub fn align_i32x16() -> Option<Align> {
+        if !is_x86_feature_detected!("avx512f")
+            || !is_x86_feature_detected!("avx512dq")
+            || !is_x86_feature_detected!("avx512vl")
+            || !is_x86_feature_detected!("avx512bw")
+        {
+            return None;
+        }
+        fn f(
+            ref_array: &[u8],
+            alt_array: &[u8],
+            parameters: Parameters,
+            overhang_strategy: OverhangStrategy,
+        ) -> Result<(Vec<u8>, usize)> {
+            if ref_array.len() > super::MAX_SW_SEQUENCE_LENGTH
+                || alt_array.len() > super::MAX_SW_SEQUENCE_LENGTH
+            {
+                return Err(Error("sequences exceed maximum length"));
+            }
+            parameters.validate()?;
+            let ref_len = ref_array.len();
+            let alt_len = alt_array.len();
+            let cigar_len = 2 * std::cmp::max(ref_len, alt_len);
+            let mut cigar_array = Vec::with_capacity(cigar_len);
+            let mut count = 0u32;
+            let mut offset = 0i32;
+            let result = unsafe {
+                runSWOnePairBT_avx512(
+                    parameters.match_value,
+                    parameters.mismatch_penalty,
+                    parameters.gap_open_penalty,
+                    parameters.gap_extend_penalty,
+                    ref_array.as_ptr() as _,
+                    alt_array.as_ptr() as _,
+                    ref_len as i16,
+                    alt_len as i16,
+                    overhang_strategy as i8,
+                    cigar_array.as_mut_ptr() as *mut c_char,
+                    cigar_len as i32,
+                    &mut count,
+                    &mut offset,
+                )
+            };
+            match result {
+                SW_SUCCESS => {}
+                SW_MEMORY_ALLOCATION_FAILED => return Err(Error("SW memory allocation failed")),
+                _ => return Err(Error("unknown SW error")),
+            }
+            unsafe { cigar_array.set_len(count as usize) };
+            Ok((cigar_array, offset as usize))
+        }
+        Some(f)
+    }
 }
