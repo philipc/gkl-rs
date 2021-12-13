@@ -113,7 +113,7 @@ pub fn forward_f64() -> Forward {
         .unwrap_or_else(forward_f64x1)
 }
 
-/// Use the fastest PairHMM forward function this is supported by the CPU features.
+/// Use the fastest PairHMM forward function that is supported by the CPU features.
 ///
 /// This function will first compute using `f32` (if a fast implementation exists),
 /// and if a precision threshold is not met then it will repeat the computation using `f64`.
