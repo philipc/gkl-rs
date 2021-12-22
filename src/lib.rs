@@ -4,7 +4,7 @@
 //! - AVX and AVX-512 versions of the PairHMM forward algorithm
 //! - AVX2 and AVX-512 versions of the Smith-Waterman sequence alignment algorithm
 #![deny(missing_docs)]
-#![cfg_attr(feature = "nightly", feature(avx512_target_feature, stdsimd, asm))]
+#![cfg_attr(feature = "nightly", feature(avx512_target_feature, stdsimd))]
 
 mod vector;
 

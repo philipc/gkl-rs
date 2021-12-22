@@ -559,7 +559,7 @@ mod x86_64_avx {
                     unsafe fn f(x: __m256d, shift_in: &f64) -> __m256d {
                         let shift_in = _mm_load_sd(shift_in);
                         let y;
-                        asm!(
+                        std::arch::asm!(
                             "vinsertf128 {0:y}, {0:y}, {1:x}, 1",
                             "vshufpd {2}, {0:y}, {1}, 4",
                             inout(xmm_reg) shift_in => _,
