@@ -279,8 +279,8 @@ fn compute<V: Int32Vector>(
     for antidiag in 1..=(nrow + ncol) {
         // Calculate endpoints of the antidiagonal: (ilo, jlo) -> (ihi, jhi).
         // Invariant: i + j == antidiag
-        let ilo = cmp::min(antidiag, nrow + 1);
-        let jhi = cmp::min(antidiag, ncol + 1);
+        let ilo = cmp::min(antidiag - 1, nrow);
+        let jhi = cmp::min(antidiag - 1, ncol);
         let ihi = antidiag - jhi;
         let jlo = antidiag - ilo;
 
@@ -356,9 +356,9 @@ fn compute<V: Int32Vector>(
             }};
         }
 
-        let mut j = jlo + 1;
-        while j + V::LANES < jhi {
-            let backtrack_ind = j - jlo - 1;
+        let mut j = jlo;
+        while j + V::LANES <= jhi {
+            let backtrack_ind = j - jlo;
             let bt_vec_0 = compute_inner!(j);
             j += V::LANES;
             let bt_vec_1 = compute_inner!(j);
@@ -375,11 +375,11 @@ fn compute<V: Int32Vector>(
                 );
             }
         }
-        if j < jhi {
+        if j <= jhi {
             let bt_vec_0 = compute_inner!(j);
             let bt_vec_1 = v.zero();
             let bt_vec = v.pack(bt_vec_0, bt_vec_1);
-            let backtrack_ind = j - jlo - 1;
+            let backtrack_ind = j - jlo;
             debug_assert!(backtrack_ind + V::LANES * 2 <= backtrack_stride);
             debug_assert!(
                 (antidiag * backtrack_stride + backtrack_ind + V::LANES * 2) <= backtrack_len
@@ -395,47 +395,47 @@ fn compute<V: Int32Vector>(
         // Update edge conditions of antidiagonal.
         match overhang_strategy {
             OverhangStrategy::Indel | OverhangStrategy::LeadingIndel => {
-                h[cur + ((max_len + 2 * jhi - antidiag) >> 1)] =
-                    parameters.gap_open_penalty + (jhi as i32 - 1) * parameters.gap_extend_penalty;
-                h[cur + ((max_len + 2 * jlo - antidiag) >> 1)] =
-                    parameters.gap_open_penalty + (ilo as i32 - 1) * parameters.gap_extend_penalty;
+                h[cur + ((max_len + 2 * jhi + 2 - antidiag) >> 1)] =
+                    parameters.gap_open_penalty + jhi as i32 * parameters.gap_extend_penalty;
+                h[cur + ((max_len + 2 * jlo - 2 - antidiag) >> 1)] =
+                    parameters.gap_open_penalty + ilo as i32 * parameters.gap_extend_penalty;
             }
             OverhangStrategy::SoftClip | OverhangStrategy::Ignore => {
-                h[cur + ((max_len + 2 * jhi - antidiag) >> 1)] = 0;
-                h[cur + ((max_len + 2 * jlo - antidiag) >> 1)] = 0;
+                h[cur + ((max_len + 2 * jhi + 2 - antidiag) >> 1)] = 0;
+                h[cur + ((max_len + 2 * jlo - 2 - antidiag) >> 1)] = 0;
             }
         }
-        f[jhi] = low_init_value;
-        e[max_len - ilo] = low_init_value;
+        f[jhi + 1] = low_init_value;
+        e[max_len - ilo - 1] = low_init_value;
 
         // Check for new max score on edges.
-        if ilo == nrow + 1 {
+        if ilo == nrow {
             if overhang_strategy == OverhangStrategy::SoftClip
                 || overhang_strategy == OverhangStrategy::Ignore
             {
-                let score = h[cur + ((max_len + jlo + 1 - (ilo - 1)) >> 1)];
+                let score = h[cur + ((max_len + jlo - ilo) >> 1)];
                 if max_score < score
                     || ((max_score == score)
-                        && ((ilo as isize - jlo as isize - 2).abs()
+                        && ((ilo as isize - jlo as isize).abs()
                             < (max_i as isize - max_j as isize).abs()))
                 {
                     max_score = score;
-                    max_i = ilo - 1;
-                    max_j = jlo + 1;
+                    max_i = ilo;
+                    max_j = jlo;
                 }
             }
         }
-        if jhi == ncol + 1 {
-            let score = h[cur + ((max_len + jhi - 1 - (ihi + 1)) >> 1)];
+        if jhi == ncol {
+            let score = h[cur + ((max_len + jhi - ihi) >> 1)];
             if (max_score < score)
                 || ((max_score == score)
                     && ((max_j == ncol)
-                        || ((ihi as isize - jhi as isize + 2).abs()
+                        || ((ihi as isize - jhi as isize).abs()
                             <= (max_i as isize - max_j as isize).abs())))
             {
                 max_score = score;
-                max_i = ihi + 1;
-                max_j = jhi - 1;
+                max_i = ihi;
+                max_j = jhi;
             }
         }
     }
@@ -476,12 +476,8 @@ fn get_cigar(
     let mut state = 0;
     while i > 0 && j > 0 {
         let antidiag = i + j;
-        let backtrack_ind = if antidiag <= nrow {
-            j - 1
-        } else {
-            let jlo = antidiag - nrow - 1;
-            j - jlo - 1
-        };
+        let jlo = if antidiag <= nrow { 1 } else { antidiag - nrow };
+        let backtrack_ind = j - jlo;
         debug_assert!(backtrack_ind < backtrack_stride);
         debug_assert!((antidiag * backtrack_stride + backtrack_ind) < backtrack_len);
         let btrack =
