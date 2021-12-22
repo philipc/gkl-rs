@@ -292,11 +292,20 @@ fn compute<V: Int32Vector>(
             ($j:expr) => {{
                 let i = antidiag - $j;
 
+                // The indices for E/F/H are chosen so that the value at (i,j) coincides
+                // with the value being replaced: E(i,j-1), F(i-1,j), and H(i-1,j-1).
+                // So we use -i to index E, j to index F, and the diagonal j-i to index H.
+                // The diagonals are stored centred on max_len / 2.
                 let diag_ind = max_len + $j - i;
+                let h_cur_ind = cur + (diag_ind >> 1);
+                // Antidiagonals intersect every second diagonal, so depending on the
+                // parity of the diagonal:
+                // H(i,j-1) will be offset by either -1 or 0,
+                // H(i-1,j) will be offset by either 0 or 1.
                 let h_left_ind = prev + ((diag_ind - 1) >> 1);
                 let h_top_ind = h_left_ind + 1;
-                let h_cur_ind = cur + (diag_ind >> 1);
 
+                // E(i,j) = max(E(i,j-1) + gap_extend, H(i,j-1) + gap_open)
                 let inde = max_len - i;
                 debug_assert!(inde + V::LANES <= e.len());
                 let e10 = unsafe { v.loadu(e.get_unchecked(inde)) };
@@ -305,11 +314,13 @@ fn compute<V: Int32Vector>(
                 let h10 = unsafe { v.loadu(h.get_unchecked(h_left_ind)) };
                 let open_score_h = v.add(h10, v.splat(parameters.gap_open_penalty));
                 let e11 = v.max(open_score_h, ext_score_h);
-                let open_gt_ext_h = v.from_mask(v.cmpgt(open_score_h, ext_score_h));
-                let ext_vec = v.andnot(open_gt_ext_h, v.splat(INSERT_EXT.into()));
                 debug_assert!(inde + V::LANES <= e.len());
                 unsafe { v.storeu(e.get_unchecked_mut(inde), e11) };
+                // Set `INSERT_EXT` if gap extend was chosen.
+                let open_gt_ext_h = v.from_mask(v.cmpgt(open_score_h, ext_score_h));
+                let ext_vec = v.andnot(open_gt_ext_h, v.splat(INSERT_EXT.into()));
 
+                // F(i,j) = max(F(i-1,j) + gap_extend, H(i-1,j) + gap_open)
                 let indf = $j;
                 debug_assert!(indf + V::LANES <= f.len());
                 let f01 = unsafe { v.loadu(f.get_unchecked(indf)) };
@@ -318,11 +329,13 @@ fn compute<V: Int32Vector>(
                 let h01 = unsafe { v.loadu(h.get_unchecked(h_top_ind)) };
                 let open_score_v = v.add(h01, v.splat(parameters.gap_open_penalty));
                 let f11 = v.max(ext_score_v, open_score_v);
-                let open_gt_ext_v = v.from_mask(v.cmpgt(open_score_v, ext_score_v));
-                let ext_vec = v.or(ext_vec, v.andnot(open_gt_ext_v, v.splat(DELETE_EXT.into())));
                 debug_assert!(indf + V::LANES <= f.len());
                 unsafe { v.storeu(f.get_unchecked_mut(indf), f11) };
+                // Set `DELETE_EXT` if gap extend was chosen.
+                let open_gt_ext_v = v.from_mask(v.cmpgt(open_score_v, ext_score_v));
+                let ext_vec = v.or(ext_vec, v.andnot(open_gt_ext_v, v.splat(DELETE_EXT.into())));
 
+                // s(i,j) is match value or mismatch penalty.
                 let seq1_ind = max_len - i;
                 debug_assert!(seq1_ind + V::LANES <= seq1_rev.len());
                 let s1 = unsafe { v.loadu(seq1_rev.get_unchecked(seq1_ind)) };
@@ -336,6 +349,9 @@ fn compute<V: Int32Vector>(
                     cmp11,
                 );
 
+                // H(i,j) = max(H(i-1,j-1) + s(i,j), E(i,j), F(i,j))
+                // Set `INSERT` if E(i, j) was chosen.
+                // Set `DELETE` if F(i, j) was chosen.
                 debug_assert!(h_cur_ind + V::LANES <= h.len());
                 let h00 = unsafe { v.loadu(h.get_unchecked(h_cur_ind)) };
                 let m11 = v.add(h00, sbt11);
@@ -356,6 +372,7 @@ fn compute<V: Int32Vector>(
             }};
         }
 
+        // Process pairs of vectors and pack the resulting backtrack.
         let mut j = jlo;
         while j + V::LANES <= jhi {
             let backtrack_ind = j - jlo;
@@ -375,6 +392,7 @@ fn compute<V: Int32Vector>(
                 );
             }
         }
+        // Handle an odd number of vectors.
         if j <= jhi {
             let bt_vec_0 = compute_inner!(j);
             let bt_vec_1 = v.zero();
@@ -470,7 +488,6 @@ fn get_cigar(
         OverhangStrategy::SoftClip | OverhangStrategy::Ignore => (max_i, max_j),
     };
 
-    // TODO: is reservation worth it?
     let mut cigar_array: Vec<(i16, u16)> = Vec::with_capacity(nrow + ncol);
     if j < ncol {
         cigar_array.push((SOFTCLIP, (ncol - j) as u16));
@@ -495,12 +512,6 @@ fn get_cigar(
             state = btrack & DELETE_EXT;
         } else {
             match btrack & 3 {
-                MATCH => {
-                    i -= 1;
-                    j -= 1;
-                    cigar_array.push((MATCH, 1));
-                    state = 0;
-                }
                 INSERT => {
                     j -= 1;
                     cigar_array.push((INSERT, 1));
@@ -511,7 +522,12 @@ fn get_cigar(
                     cigar_array.push((DELETE, 1));
                     state = btrack & DELETE_EXT;
                 }
-                _ => unreachable!(),
+                _ => {
+                    i -= 1;
+                    j -= 1;
+                    cigar_array.push((MATCH, 1));
+                    state = 0;
+                }
             }
         }
     }
