@@ -8,6 +8,13 @@ fn test_one(
     expected_offset: isize,
     expected: &[u8],
 ) {
+    {
+        let f = gkl::smithwaterman::align_i32x1();
+        let (cigar, offset) = f(ref_array, alt_array, parameters, overhang).unwrap();
+        assert_eq!(cigar, expected);
+        assert_eq!(offset, expected_offset);
+    }
+
     if let Some(f) = gkl::smithwaterman::align_i32x8() {
         let (cigar, offset) = f(ref_array, alt_array, parameters, overhang).unwrap();
         assert_eq!(cigar, expected);
@@ -165,6 +172,10 @@ fn identical_alignments_with_differing_flank_lengths() {
             }
         }
     };
+    {
+        let f = gkl::smithwaterman::align_i32x1();
+        test_one(f);
+    }
     if let Some(f) = gkl::smithwaterman::align_i32x8() {
         test_one(f);
     }
@@ -248,5 +259,21 @@ fn substring_match_long() {
         OverhangStrategy::Ignore,
         359,
         b"7M",
+    );
+}
+
+#[test]
+fn bounds() {
+    let ref_array = b"30011130011113001113001113001110011130011130011113001113001113001113001113001110011130011130011130011130011113001111300111130011";
+    let alt_array = b"00111001113001110011130011130011130011130011130011110011";
+    let cigar = b"1D5M14D17M42D30M15D4M";
+    let parameters = gkl::smithwaterman::Parameters::new(1, -4, -6, -1);
+    test_one(
+        ref_array,
+        alt_array,
+        parameters,
+        OverhangStrategy::Indel,
+        0,
+        cigar,
     );
 }

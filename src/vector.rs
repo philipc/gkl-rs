@@ -39,6 +39,7 @@ pub(crate) trait Vector: Copy {
     fn sub(self, a: Self::FloatVec, b: Self::FloatVec) -> Self::FloatVec;
     fn mul(self, a: Self::FloatVec, b: Self::FloatVec) -> Self::FloatVec;
     fn div(self, a: Self::FloatVec, b: Self::FloatVec) -> Self::FloatVec;
+    /// `if mask { b } else { a }`
     fn blend(self, a: Self::FloatVec, b: Self::FloatVec, mask: Self::MaskVec) -> Self::FloatVec;
 
     // Shift out the previous last element.
@@ -249,9 +250,179 @@ impl Vector for F64x1 {
     }
 }
 
+/// A target specific implementation of vector operations.
+pub(crate) trait Int32Vector: Copy {
+    /// Should be `[i32; LANES]`.
+    type Array: ops::IndexMut<usize, Output = i32> + Default;
+    /// Vector containing `[i32; LANES]`.
+    type Vec: Copy;
+    /// Vector containing `[i16; 2 * LANES]`.
+    type Pack: Copy;
+    /// Vector containing `[bool; LANES]`.
+    type Mask: Copy;
+    const LANES: usize;
+
+    /// Vector with all elements set to 0.
+    fn zero(self) -> Self::Vec;
+
+    /// Vector with all elements set to given value.
+    fn splat(self, i: i32) -> Self::Vec;
+
+    /// Load unaligned vector.
+    ///
+    /// Safety: src must have the same size as `Self::Vec`.
+    unsafe fn loadu(self, src: *const i32) -> Self::Vec;
+
+    /// Store aligned vector.
+    ///
+    /// Safety: dest must have the same size and alignment as `Self::Vec`.
+    unsafe fn store(self, dest: *mut i32, i: Self::Vec);
+
+    /// Store unaligned vector.
+    ///
+    /// Safety: dest must have the same size as `Self::Vec`.
+    unsafe fn storeu(self, dest: *mut i32, i: Self::Vec);
+
+    /// Pack two vectors of `i32` into a single vector of `i16`.
+    fn pack(self, a: Self::Vec, b: Self::Vec) -> Self::Pack;
+
+    /// Store aligned packed vector using a non-temporal memory hint.
+    ///
+    /// Safety: dest must have the same size and alignment as `Self::Pack`.
+    unsafe fn stream(self, dest: *mut i16, i: Self::Pack);
+
+    fn add(self, a: Self::Vec, b: Self::Vec) -> Self::Vec;
+
+    fn max(self, a: Self::Vec, b: Self::Vec) -> Self::Vec;
+
+    fn and(self, a: Self::Vec, b: Self::Vec) -> Self::Vec;
+    /// `!a & b`
+    fn andnot(self, a: Self::Vec, b: Self::Vec) -> Self::Vec;
+    fn or(self, a: Self::Vec, b: Self::Vec) -> Self::Vec;
+
+    fn cmpgt(self, a: Self::Vec, b: Self::Vec) -> Self::Mask;
+    fn cmpeq(self, a: Self::Vec, b: Self::Vec) -> Self::Mask;
+
+    /// `if mask { b } else { a }`
+    fn blend(self, a: Self::Vec, b: Self::Vec, mask: Self::Mask) -> Self::Vec;
+
+    fn from_array(self, a: Self::Array) -> Self::Vec;
+    fn to_array(self, a: Self::Vec) -> Self::Array;
+    fn from_mask(self, mask: Self::Mask) -> Self::Vec;
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct I32x1;
+
+impl Int32Vector for I32x1 {
+    type Array = [i32; 1];
+    type Vec = i32;
+    type Pack = [i16; 2];
+    type Mask = bool;
+    const LANES: usize = 1;
+
+    #[inline]
+    fn zero(self) -> Self::Vec {
+        0
+    }
+
+    #[inline]
+    fn splat(self, i: i32) -> Self::Vec {
+        i
+    }
+
+    #[inline]
+    unsafe fn loadu(self, src: *const i32) -> Self::Vec {
+        src.read()
+    }
+
+    #[inline]
+    unsafe fn store(self, dest: *mut i32, i: Self::Vec) {
+        dest.write(i);
+    }
+
+    #[inline]
+    unsafe fn storeu(self, dest: *mut i32, i: Self::Vec) {
+        dest.write(i);
+    }
+
+    #[inline]
+    fn pack(self, a: Self::Vec, b: Self::Vec) -> Self::Pack {
+        [a as i16, b as i16]
+    }
+
+    #[inline]
+    unsafe fn stream(self, dest: *mut i16, i: Self::Pack) {
+        (dest as *mut [i16; 2]).write(i);
+    }
+
+    #[inline]
+    fn add(self, a: Self::Vec, b: Self::Vec) -> Self::Vec {
+        a.wrapping_add(b)
+    }
+
+    #[inline]
+    fn max(self, a: Self::Vec, b: Self::Vec) -> Self::Vec {
+        std::cmp::max(a, b)
+    }
+
+    #[inline]
+    fn and(self, a: Self::Vec, b: Self::Vec) -> Self::Vec {
+        a & b
+    }
+
+    #[inline]
+    fn andnot(self, a: Self::Vec, b: Self::Vec) -> Self::Vec {
+        !a & b
+    }
+
+    #[inline]
+    fn or(self, a: Self::Vec, b: Self::Vec) -> Self::Vec {
+        a | b
+    }
+
+    #[inline]
+    fn cmpgt(self, a: Self::Vec, b: Self::Vec) -> Self::Mask {
+        a > b
+    }
+
+    #[inline]
+    fn cmpeq(self, a: Self::Vec, b: Self::Vec) -> Self::Mask {
+        a == b
+    }
+
+    #[inline]
+    fn blend(self, a: Self::Vec, b: Self::Vec, mask: Self::Mask) -> Self::Vec {
+        if mask {
+            b
+        } else {
+            a
+        }
+    }
+
+    #[inline]
+    fn from_array(self, a: Self::Array) -> Self::Vec {
+        a[0]
+    }
+
+    #[inline]
+    fn to_array(self, a: Self::Vec) -> Self::Array {
+        [a]
+    }
+
+    #[inline]
+    fn from_mask(self, mask: Self::Mask) -> Self::Vec {
+        if mask {
+            !0
+        } else {
+            0
+        }
+    }
+}
+
 #[cfg(all(target_arch = "x86_64", not(feature = "c-avx")))]
 mod x86_64_avx {
-    use super::Vector;
+    use super::{Int32Vector, Vector};
     use std::arch::x86_64::*;
     use std::mem;
 
@@ -614,13 +785,142 @@ mod x86_64_avx {
             }
         }
     }
+
+    #[derive(Clone, Copy)]
+    pub struct AvxI32x8(());
+
+    impl AvxI32x8 {
+        #[inline]
+        pub fn new() -> Option<Self> {
+            if is_x86_feature_detected!("avx2") {
+                Some(AvxI32x8(()))
+            } else {
+                None
+            }
+        }
+
+        #[inline]
+        pub fn new_unchecked() -> Self {
+            AvxI32x8(())
+        }
+    }
+
+    impl Int32Vector for AvxI32x8 {
+        type Array = [i32; 8];
+        type Vec = __m256i;
+        type Pack = __m256i;
+        type Mask = __m256i;
+        const LANES: usize = 8;
+
+        // Vector with all elements set to 0.
+        #[inline]
+        fn zero(self) -> Self::Vec {
+            unsafe { _mm256_setzero_si256() }
+        }
+
+        // Vector with all elements set to given value.
+        #[inline]
+        fn splat(self, i: i32) -> Self::Vec {
+            unsafe { _mm256_set1_epi32(i) }
+        }
+
+        #[inline]
+        unsafe fn loadu(self, src: *const i32) -> Self::Vec {
+            _mm256_loadu_si256(src as _)
+        }
+
+        #[inline]
+        unsafe fn store(self, dest: *mut i32, i: Self::Vec) {
+            _mm256_store_si256(dest as _, i);
+        }
+
+        #[inline]
+        unsafe fn storeu(self, dest: *mut i32, i: Self::Vec) {
+            _mm256_storeu_si256(dest as _, i);
+        }
+
+        #[inline]
+        fn pack(self, a: Self::Vec, b: Self::Vec) -> Self::Pack {
+            unsafe {
+                let even = _mm256_permute2f128_si256::<0x20>(a, b);
+                let odd = _mm256_permute2f128_si256::<0x31>(a, b);
+                _mm256_packs_epi32(even, odd)
+            }
+        }
+
+        #[inline]
+        unsafe fn stream(self, dest: *mut i16, i: Self::Pack) {
+            _mm256_stream_si256(dest as _, i);
+        }
+
+        #[inline]
+        fn add(self, a: Self::Vec, b: Self::Vec) -> Self::Vec {
+            unsafe { _mm256_add_epi32(a, b) }
+        }
+
+        #[inline]
+        fn max(self, a: Self::Vec, b: Self::Vec) -> Self::Vec {
+            unsafe { _mm256_max_epi32(a, b) }
+        }
+
+        #[inline]
+        fn and(self, a: Self::Vec, b: Self::Vec) -> Self::Vec {
+            unsafe { _mm256_and_si256(a, b) }
+        }
+
+        #[inline]
+        fn andnot(self, a: Self::Vec, b: Self::Vec) -> Self::Vec {
+            unsafe { _mm256_andnot_si256(a, b) }
+        }
+
+        #[inline]
+        fn or(self, a: Self::Vec, b: Self::Vec) -> Self::Vec {
+            unsafe { _mm256_or_si256(a, b) }
+        }
+
+        #[inline]
+        fn cmpgt(self, a: Self::Vec, b: Self::Vec) -> Self::Mask {
+            unsafe { _mm256_cmpgt_epi32(a, b) }
+        }
+
+        #[inline]
+        fn cmpeq(self, a: Self::Vec, b: Self::Vec) -> Self::Mask {
+            unsafe { _mm256_cmpeq_epi32(a, b) }
+        }
+
+        #[inline]
+        fn blend(self, a: Self::Vec, b: Self::Vec, mask: Self::Mask) -> Self::Vec {
+            unsafe {
+                mem::transmute(_mm256_blendv_ps(
+                    mem::transmute(a),
+                    mem::transmute(b),
+                    mem::transmute(mask),
+                ))
+            }
+        }
+
+        #[inline]
+        fn from_array(self, a: Self::Array) -> Self::Vec {
+            unsafe { mem::transmute(a) }
+        }
+
+        #[inline]
+        fn to_array(self, a: Self::Vec) -> Self::Array {
+            unsafe { mem::transmute(a) }
+        }
+
+        #[inline]
+        fn from_mask(self, mask: Self::Mask) -> Self::Vec {
+            unsafe { mem::transmute(mask) }
+        }
+    }
 }
 #[cfg(all(target_arch = "x86_64", not(feature = "c-avx")))]
 pub(crate) use x86_64_avx::*;
 
 #[cfg(all(target_arch = "x86_64", not(feature = "c-avx512"), feature = "nightly"))]
 mod x86_64_avx512 {
-    use super::Vector;
+    use super::{Int32Vector, Vector};
     use std::arch::x86_64::*;
     use std::mem;
 
@@ -916,6 +1216,150 @@ mod x86_64_avx512 {
         #[inline]
         fn mask_shift(self, x: Self::MaskVec) -> Self::MaskVec {
             unsafe { _mm512_slli_epi64::<1>(x) }
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    pub struct AvxI32x16(());
+
+    impl AvxI32x16 {
+        #[inline]
+        pub fn new() -> Option<Self> {
+            if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512dq") {
+                Some(AvxI32x16(()))
+            } else {
+                None
+            }
+        }
+
+        #[inline]
+        pub fn new_unchecked() -> Self {
+            AvxI32x16(())
+        }
+    }
+
+    impl Int32Vector for AvxI32x16 {
+        type Array = [i32; 16];
+        type Vec = __m512i;
+        type Pack = __m512i;
+        type Mask = __mmask16;
+        const LANES: usize = 16;
+
+        // Vector with all elements set to 0.
+        #[inline]
+        fn zero(self) -> Self::Vec {
+            unsafe { _mm512_setzero_si512() }
+        }
+
+        // Vector with all elements set to given value.
+        #[inline]
+        fn splat(self, i: i32) -> Self::Vec {
+            unsafe { _mm512_set1_epi32(i) }
+        }
+
+        #[inline]
+        unsafe fn loadu(self, src: *const i32) -> Self::Vec {
+            _mm512_loadu_si512(src)
+        }
+
+        #[inline]
+        unsafe fn store(self, dest: *mut i32, i: Self::Vec) {
+            _mm512_store_si512(dest, i);
+        }
+
+        #[inline]
+        unsafe fn storeu(self, dest: *mut i32, i: Self::Vec) {
+            _mm512_storeu_si512(dest, i);
+        }
+
+        #[inline]
+        fn pack(self, a: Self::Vec, b: Self::Vec) -> Self::Pack {
+            unsafe {
+                let idx_even =
+                    _mm512_set_epi32(27, 26, 25, 24, 19, 18, 17, 16, 11, 10, 9, 8, 3, 2, 1, 0);
+                let idx_odd =
+                    _mm512_set_epi32(31, 30, 29, 28, 23, 22, 21, 20, 15, 14, 13, 12, 7, 6, 5, 4);
+                let even = _mm512_permutex2var_epi32(a, idx_even, b);
+                let odd = _mm512_permutex2var_epi32(a, idx_odd, b);
+                _mm512_packs_epi32(even, odd)
+            }
+        }
+
+        #[inline]
+        unsafe fn stream(self, dest: *mut i16, i: Self::Pack) {
+            _mm512_stream_si512(dest as _, i);
+        }
+
+        #[inline]
+        fn add(self, a: Self::Vec, b: Self::Vec) -> Self::Vec {
+            unsafe { _mm512_add_epi32(a, b) }
+        }
+
+        #[inline]
+        fn max(self, a: Self::Vec, b: Self::Vec) -> Self::Vec {
+            unsafe { _mm512_max_epi32(a, b) }
+        }
+
+        #[inline]
+        fn and(self, a: Self::Vec, b: Self::Vec) -> Self::Vec {
+            unsafe { _mm512_and_si512(a, b) }
+        }
+
+        #[inline]
+        fn andnot(self, a: Self::Vec, b: Self::Vec) -> Self::Vec {
+            unsafe { _mm512_andnot_si512(a, b) }
+        }
+
+        #[inline]
+        fn or(self, a: Self::Vec, b: Self::Vec) -> Self::Vec {
+            unsafe { _mm512_or_si512(a, b) }
+        }
+
+        #[inline]
+        fn cmpgt(self, a: Self::Vec, b: Self::Vec) -> Self::Mask {
+            unsafe { _mm512_cmpgt_epi32_mask(a, b) }
+        }
+
+        #[inline]
+        fn cmpeq(self, a: Self::Vec, b: Self::Vec) -> Self::Mask {
+            unsafe { _mm512_cmpeq_epi32_mask(a, b) }
+        }
+
+        #[inline]
+        fn blend(self, a: Self::Vec, b: Self::Vec, mask: Self::Mask) -> Self::Vec {
+            unsafe {
+                mem::transmute(_mm512_mask_blend_epi32(
+                    mem::transmute(mask),
+                    mem::transmute(a),
+                    mem::transmute(b),
+                ))
+            }
+        }
+
+        #[inline]
+        fn from_array(self, a: Self::Array) -> Self::Vec {
+            unsafe { mem::transmute(a) }
+        }
+
+        #[inline]
+        fn to_array(self, a: Self::Vec) -> Self::Array {
+            unsafe { mem::transmute(a) }
+        }
+
+        #[inline]
+        fn from_mask(self, mask: Self::Mask) -> Self::Vec {
+            #[target_feature(enable = "avx512f,avx512dq")]
+            #[inline]
+            unsafe fn f(mask: __mmask16) -> __m512i {
+                let z;
+                std::arch::asm!(
+                    "vpmovm2d {1}, {0}",
+                    in(kreg) mask,
+                    out(zmm_reg) z,
+                );
+                z
+            }
+            unsafe { f(mask) }
         }
     }
 }
