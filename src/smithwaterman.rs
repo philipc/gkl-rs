@@ -116,7 +116,7 @@ pub type Align = fn(
     alt_array: &[u8],
     parameters: Parameters,
     overhang_strategy: OverhangStrategy,
-) -> Result<(Vec<u8>, usize)>;
+) -> Result<(Vec<u8>, isize)>;
 
 /// Return the `32x8` implementation of the alignment function if supported by the CPU features.
 pub fn align_i32x8() -> Option<Align> {
@@ -196,7 +196,7 @@ mod c {
             alt_array: &[u8],
             parameters: Parameters,
             overhang_strategy: OverhangStrategy,
-        ) -> Result<(Vec<u8>, usize)> {
+        ) -> Result<(Vec<u8>, isize)> {
             if ref_array.len() > super::MAX_SW_SEQUENCE_LENGTH
                 || alt_array.len() > super::MAX_SW_SEQUENCE_LENGTH
             {
@@ -230,7 +230,7 @@ mod c {
                 return Err(Error("compute failed"));
             }
             unsafe { cigar_array.set_len(count as usize) };
-            Ok((cigar_array, offset as usize))
+            Ok((cigar_array, offset as isize))
         }
         Some(f)
     }
@@ -249,7 +249,7 @@ mod c {
             alt_array: &[u8],
             parameters: Parameters,
             overhang_strategy: OverhangStrategy,
-        ) -> Result<(Vec<u8>, usize)> {
+        ) -> Result<(Vec<u8>, isize)> {
             if ref_array.len() > super::MAX_SW_SEQUENCE_LENGTH
                 || alt_array.len() > super::MAX_SW_SEQUENCE_LENGTH
             {
@@ -285,7 +285,7 @@ mod c {
                 _ => return Err(Error("unknown SW error")),
             }
             unsafe { cigar_array.set_len(count as usize) };
-            Ok((cigar_array, offset as usize))
+            Ok((cigar_array, offset as isize))
         }
         Some(f)
     }

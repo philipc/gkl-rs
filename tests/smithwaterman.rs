@@ -5,7 +5,7 @@ fn test_one(
     alt_array: &[u8],
     parameters: Parameters,
     overhang: OverhangStrategy,
-    expected_offset: usize,
+    expected_offset: isize,
     expected: &[u8],
 ) {
     if let Some(f) = gkl::smithwaterman::align_i32x8() {
