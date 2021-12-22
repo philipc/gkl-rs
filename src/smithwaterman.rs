@@ -392,17 +392,20 @@ fn compute<V: Int32Vector>(
             }
         }
 
+        let curhi = cur + ((max_len + jhi - ihi) >> 1);
+        let curlo = cur + ((max_len + jlo - ilo) >> 1);
+
         // Update edge conditions of antidiagonal.
         match overhang_strategy {
             OverhangStrategy::Indel | OverhangStrategy::LeadingIndel => {
-                h[cur + ((max_len + 2 * jhi + 2 - antidiag) >> 1)] =
+                h[curhi + 1] =
                     parameters.gap_open_penalty + jhi as i32 * parameters.gap_extend_penalty;
-                h[cur + ((max_len + 2 * jlo - 2 - antidiag) >> 1)] =
+                h[curlo - 1] =
                     parameters.gap_open_penalty + ilo as i32 * parameters.gap_extend_penalty;
             }
             OverhangStrategy::SoftClip | OverhangStrategy::Ignore => {
-                h[cur + ((max_len + 2 * jhi + 2 - antidiag) >> 1)] = 0;
-                h[cur + ((max_len + 2 * jlo - 2 - antidiag) >> 1)] = 0;
+                h[curhi + 1] = 0;
+                h[curlo - 1] = 0;
             }
         }
         f[jhi + 1] = low_init_value;
@@ -413,7 +416,7 @@ fn compute<V: Int32Vector>(
             if overhang_strategy == OverhangStrategy::SoftClip
                 || overhang_strategy == OverhangStrategy::Ignore
             {
-                let score = h[cur + ((max_len + jlo - ilo) >> 1)];
+                let score = h[curlo];
                 if max_score < score
                     || ((max_score == score)
                         && ((ilo as isize - jlo as isize).abs()
@@ -426,7 +429,7 @@ fn compute<V: Int32Vector>(
             }
         }
         if jhi == ncol {
-            let score = h[cur + ((max_len + jhi - ihi) >> 1)];
+            let score = h[curhi];
             if (max_score < score)
                 || ((max_score == score)
                     && ((max_j == ncol)
