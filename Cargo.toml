@@ -41,5 +41,9 @@ c-core = []
 debug = true
 
 [[bench]]
+name = "smithwaterman"
+harness = false
+
+[[bench]]
 name = "pairhmm"
 harness = false
