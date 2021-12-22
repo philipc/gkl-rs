@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -55,4 +55,14 @@ fn bench(c: &mut Criterion) {
     if let Some(f) = gkl::smithwaterman::align_i32x16() {
         c.bench_function("align_i32x16", |b| b.iter(|| bench!(f)));
     }
+
+    let mut group = c.benchmark_group("slow");
+    group.sample_size(10).sampling_mode(SamplingMode::Flat);
+
+    {
+        let f = gkl::smithwaterman::align_i32x1();
+        group.bench_function("align_i32x1", |b| b.iter(|| bench!(f)));
+    }
+
+    group.finish();
 }
