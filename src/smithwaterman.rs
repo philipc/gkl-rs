@@ -618,7 +618,7 @@ mod x86_64_avx512 {
     use crate::vector::AvxI32x16;
 
     #[cfg(feature = "nightly")]
-    #[target_feature(enable = "avx512f,avx512dq")]
+    #[target_feature(enable = "avx512f,avx512bw,avx512dq")]
     unsafe fn target_align_i32x16(
         ref_array: &[u8],
         alt_array: &[u8],
