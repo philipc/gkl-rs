@@ -1225,7 +1225,10 @@ mod x86_64_avx512 {
     impl AvxI32x16 {
         #[inline]
         pub fn new() -> Option<Self> {
-            if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512dq") {
+            if is_x86_feature_detected!("avx512f")
+                && is_x86_feature_detected!("avx512bw")
+                && is_x86_feature_detected!("avx512dq")
+            {
                 Some(AvxI32x16(()))
             } else {
                 None
