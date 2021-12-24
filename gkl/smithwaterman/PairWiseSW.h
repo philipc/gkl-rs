@@ -62,7 +62,7 @@
 
 static uint32_t D_MAX_SEQ_LEN = MAX_SEQ_LEN;
 
-void inline smithWatermanBackTrack(SeqPair *p, int32_t match, int32_t mismatch, int32_t open, int32_t extend, int32_t* E_,int32_t tid)
+static void inline smithWatermanBackTrack(SeqPair *p, int32_t match, int32_t mismatch, int32_t open, int32_t extend, int32_t* E_,int32_t tid)
 {
     uint32_t seq1[D_MAX_SEQ_LEN];
     uint32_t seq1Rev[D_MAX_SEQ_LEN];
