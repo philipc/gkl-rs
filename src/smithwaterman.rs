@@ -551,31 +551,29 @@ fn get_cigar(
         0
     };
 
-    // TODO: this can be avoided
-    let mut cigar_array2: Vec<(i16, u16)> = Vec::with_capacity(cigar_array.len());
-    let mut prev = cigar_array[0];
-    for cur in &cigar_array[1..] {
-        if prev.0 == cur.0 {
-            prev.1 += cur.1;
-        } else {
-            cigar_array2.push(prev);
-            prev = *cur;
-        }
-    }
-    cigar_array2.push(prev);
-
     let mut cigar = Vec::new();
-    for (state, count) in cigar_array2.iter().rev().copied() {
-        let state = match state {
+    let mut write_state = |(state, count)| {
+        write!(&mut cigar, "{}", count).unwrap();
+        cigar.push(match state {
             MATCH => b'M',
             INSERT => b'I',
             DELETE => b'D',
             SOFTCLIP => b'S',
             _ => b'R',
-        };
-        write!(&mut cigar, "{}", count).unwrap();
-        cigar.push(state);
+        });
+    };
+
+    let mut states = cigar_array.iter().rev().copied();
+    let mut prev = states.next().unwrap();
+    for cur in states {
+        if prev.0 == cur.0 {
+            prev.1 += cur.1;
+        } else {
+            write_state(prev);
+            prev = cur;
+        }
     }
+    write_state(prev);
     (cigar, alignment_offset.into())
 }
 
