@@ -1278,12 +1278,8 @@ mod x86_64_avx512 {
         #[inline]
         fn pack(self, a: Self::Vec, b: Self::Vec) -> Self::Pack {
             unsafe {
-                let idx_even =
-                    _mm512_set_epi32(27, 26, 25, 24, 19, 18, 17, 16, 11, 10, 9, 8, 3, 2, 1, 0);
-                let idx_odd =
-                    _mm512_set_epi32(31, 30, 29, 28, 23, 22, 21, 20, 15, 14, 13, 12, 7, 6, 5, 4);
-                let even = _mm512_permutex2var_epi32(a, idx_even, b);
-                let odd = _mm512_permutex2var_epi32(a, idx_odd, b);
+                let even = _mm512_shuffle_i64x2::<0b10_00_10_00>(a, b);
+                let odd = _mm512_shuffle_i64x2::<0b11_01_11_01>(a, b);
                 _mm512_packs_epi32(even, odd)
             }
         }
