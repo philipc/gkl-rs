@@ -269,13 +269,13 @@ fn compute<V: Int32Vector>(
     // The oldest is overwritten in place as we proceed along the antidiagonal.
     let hwidth = max_len + V::LANES;
     let mut h = vec![0i32; 2 * hwidth];
-    //h[max_len / 2] = 0;
 
     let mut max_score = i32::MIN;
     let mut max_i = 0;
     let mut max_j = 0;
 
-    // TODO: extra antidiagonal?
+    // Note: the first antidiagonal has jlo > jhi, but we use it to
+    // initialize H(0, 1) and H(1, 0).
     for antidiag in 1..=(nrow + ncol) {
         // Calculate endpoints of the antidiagonal: (ilo, jlo) -> (ihi, jhi).
         // Invariant: i + j == antidiag
