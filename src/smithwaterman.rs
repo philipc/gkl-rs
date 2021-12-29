@@ -24,17 +24,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 const MAX_SW_SEQUENCE_LENGTH: usize = 32 * 1024 - 1; // 2^15 - 1
 /// prevents integer overflow on the diagonal of the scoring matrix
 const MAXIMUM_SW_MATCH_VALUE: i32 = 64 * 1024; // 2^16
-const MATCH: i16 = 0;
 const INSERT: i16 = 1;
 const DELETE: i16 = 2;
 const INSERT_EXT: i16 = 4;
 const DELETE_EXT: i16 = 8;
-const SOFTCLIP: i16 = 9;
-/*
-const INDEL: i16 = 10;
-const LEADING_INDEL: i16 = 11;
-const IGNORE: i16 = 12;
-*/
 
 /// The parameters used by Smith-Waterman alignment.
 #[derive(Debug, Clone, Copy)]
@@ -488,9 +481,9 @@ fn get_cigar(
         OverhangStrategy::SoftClip | OverhangStrategy::Ignore => (max_i, max_j),
     };
 
-    let mut cigar_array: Vec<(i16, u16)> = Vec::with_capacity(nrow + ncol);
+    let mut cigar_array: Vec<(u8, u16)> = Vec::with_capacity(nrow + ncol);
     if j < ncol {
-        cigar_array.push((SOFTCLIP, (ncol - j) as u16));
+        cigar_array.push((b'S', (ncol - j) as u16));
     }
 
     let mut state = 0;
@@ -514,18 +507,18 @@ fn get_cigar(
             match btrack & 3 {
                 INSERT => {
                     j -= 1;
-                    cigar_array.push((INSERT, 1));
+                    cigar_array.push((b'I', 1));
                     state = btrack & INSERT_EXT;
                 }
                 DELETE => {
                     i -= 1;
-                    cigar_array.push((DELETE, 1));
+                    cigar_array.push((b'D', 1));
                     state = btrack & DELETE_EXT;
                 }
                 _ => {
                     i -= 1;
                     j -= 1;
-                    cigar_array.push((MATCH, 1));
+                    cigar_array.push((b'M', 1));
                     state = 0;
                 }
             }
@@ -534,7 +527,7 @@ fn get_cigar(
 
     let alignment_offset = if overhang_strategy == OverhangStrategy::SoftClip {
         if j > 0 {
-            cigar_array.push((SOFTCLIP, j as u16));
+            cigar_array.push((b'S', j as u16));
         }
         i as isize
     } else if overhang_strategy == OverhangStrategy::Ignore {
@@ -544,9 +537,9 @@ fn get_cigar(
         i as isize - j as isize
     } else {
         if i > 0 {
-            cigar_array.push((DELETE, i as u16));
+            cigar_array.push((b'D', i as u16));
         } else if j > 0 {
-            cigar_array.push((INSERT, j as u16));
+            cigar_array.push((b'I', j as u16));
         }
         0
     };
@@ -554,13 +547,7 @@ fn get_cigar(
     let mut cigar = Vec::new();
     let mut write_state = |(state, count)| {
         write!(&mut cigar, "{}", count).unwrap();
-        cigar.push(match state {
-            MATCH => b'M',
-            INSERT => b'I',
-            DELETE => b'D',
-            SOFTCLIP => b'S',
-            _ => b'R',
-        });
+        cigar.push(state);
     };
 
     let mut states = cigar_array.iter().rev().copied();
