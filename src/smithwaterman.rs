@@ -409,12 +409,25 @@ fn compute<V: Int32Vector>(
         // Update edge conditions of antidiagonal.
         match overhang_strategy {
             OverhangStrategy::Indel | OverhangStrategy::LeadingIndel => {
+                // Set the cost of leading indels using the usual penalties.
+                //
+                // This allows leading insertions to be immediately followed by deletions,
+                // and vice versa.
+                //
+                // TODO: should use low_init_value to force mismatches instead?
                 h[curhi + 1] =
                     parameters.gap_open_penalty + jhi as i32 * parameters.gap_extend_penalty;
                 h[curlo - 1] =
                     parameters.gap_open_penalty + ilo as i32 * parameters.gap_extend_penalty;
             }
             OverhangStrategy::SoftClip | OverhangStrategy::Ignore => {
+                // Leading indels are free.
+                //
+                // Note that this only allows either insertions or deletions to be free, not
+                // both at the same time.
+                //
+                // This still allows leading insertions to be immediately followed by deletions,
+                // and vice versa.
                 h[curhi + 1] = 0;
                 h[curlo - 1] = 0;
             }
@@ -423,10 +436,13 @@ fn compute<V: Int32Vector>(
         e[max_len - ilo - 1] = low_init_value;
 
         // Check for new max score on edges.
+        //
+        // This is used for the backtrack start location.
         if ilo == nrow {
             if overhang_strategy == OverhangStrategy::SoftClip
                 || overhang_strategy == OverhangStrategy::Ignore
             {
+                // Trailing insertions are free.
                 let score = h[curlo];
                 if max_score < score
                     || ((max_score == score)
@@ -440,6 +456,9 @@ fn compute<V: Int32Vector>(
             }
         }
         if jhi == ncol {
+            // Trailing deletions are free.
+            //
+            // Note that this max score is only used if the strategy is not `Indel`.
             let score = h[curhi];
             if (max_score < score)
                 || ((max_score == score)
@@ -475,16 +494,24 @@ fn get_cigar(
 ) -> (Vec<u8>, isize) {
     let nrow = ref_array.len();
     let ncol = alt_array.len();
-    let (mut i, mut j) = match overhang_strategy {
-        OverhangStrategy::Indel => (nrow, ncol),
-        OverhangStrategy::LeadingIndel => (max_i, ncol),
-        OverhangStrategy::SoftClip | OverhangStrategy::Ignore => (max_i, max_j),
-    };
-
     let mut cigar_array: Vec<(u8, u16)> = Vec::with_capacity(nrow + ncol);
-    if j < ncol {
-        cigar_array.push((b'S', (ncol - j) as u16));
-    }
+
+    // Backtrack start location depends on trailing overhang strategy.
+    let (mut i, mut j) = match overhang_strategy {
+        // Trailing indels have usual costs.
+        OverhangStrategy::Indel => (nrow, ncol),
+        // Trailing insertions have usual costs, ignore trailing deletions.
+        OverhangStrategy::LeadingIndel => (max_i, ncol),
+        // Softclip trailing insertions, ignore trailing deletions.
+        OverhangStrategy::SoftClip => {
+            if ncol > max_j {
+                cigar_array.push((b'S', (ncol - max_j) as u16));
+            }
+            (max_i, max_j)
+        }
+        // Ignore trailing indels.
+        OverhangStrategy::Ignore => (max_i, max_j),
+    };
 
     let mut state = 0;
     while i > 0 && j > 0 {
@@ -525,23 +552,42 @@ fn get_cigar(
         }
     }
 
-    let alignment_offset = if overhang_strategy == OverhangStrategy::SoftClip {
-        if j > 0 {
-            cigar_array.push((b'S', j as u16));
+    // Alignment depends on leading overhang strategy.
+    let alignment_offset = match overhang_strategy {
+        OverhangStrategy::SoftClip => {
+            // Either softclip leading insertions or ignore leading deletions.
+            // Alignment is set to the number of ignored deletions.
+            if j > 0 {
+                debug_assert_eq!(i, 0);
+                cigar_array.push((b'S', j as u16));
+            }
+            i as isize
         }
-        i as isize
-    } else if overhang_strategy == OverhangStrategy::Ignore {
-        if j > 0 {
-            cigar_array.push((cigar_array.last().unwrap().0, j as u16));
+        OverhangStrategy::Ignore => {
+            // Ignore leading indels.
+            // Alignment is set based on number of ignored indels.
+            if j > 0 {
+                // Add leading matches/insertions, but the consumer should use
+                // the negative alignment offset to ignore them.
+                //
+                // TODO: it doesn't seem correct to sometimes use insertions for this.
+                //
+                // TODO: seems it would be simpler to not do this, but that's an API change
+                cigar_array.push((cigar_array.last().unwrap().0, j as u16));
+                -(j as isize)
+            } else {
+                i as isize
+            }
         }
-        i as isize - j as isize
-    } else {
-        if i > 0 {
-            cigar_array.push((b'D', i as u16));
-        } else if j > 0 {
-            cigar_array.push((b'I', j as u16));
+        OverhangStrategy::Indel | OverhangStrategy::LeadingIndel => {
+            // Add leading indels.
+            if i > 0 {
+                cigar_array.push((b'D', i as u16));
+            } else if j > 0 {
+                cigar_array.push((b'I', j as u16));
+            }
+            0
         }
-        0
     };
 
     let mut cigar = Vec::new();
