@@ -60,9 +60,7 @@
             VEC_STOREU((VEC_INT_TYPE *)(&H[hCurInd]), h11); \
             }
 
-static uint32_t D_MAX_SEQ_LEN = MAX_SEQ_LEN;
-
-void inline smithWatermanBackTrack(SeqPair *p, int32_t match, int32_t mismatch, int32_t open, int32_t extend, int32_t* E_,int32_t tid)
+static void inline smithWatermanBackTrack(uint32_t D_MAX_SEQ_LEN, SeqPair *p, int32_t match, int32_t mismatch, int32_t open, int32_t extend, int32_t* E_,int32_t tid)
 {
     uint32_t seq1[D_MAX_SEQ_LEN];
     uint32_t seq1Rev[D_MAX_SEQ_LEN];
@@ -262,7 +260,7 @@ void inline smithWatermanBackTrack(SeqPair *p, int32_t match, int32_t mismatch, 
     return;
 }
 
-void inline getCIGAR(SeqPair *p, int16_t *cigarBuf_, int32_t cigarBufLength, int32_t tid)
+void inline getCIGAR(uint32_t D_MAX_SEQ_LEN, SeqPair *p, int16_t *cigarBuf_, int32_t cigarBufLength, int32_t tid)
 {
     int16_t *btrack = p->btrack;
     int16_t max_i = p->max_i;
@@ -459,7 +457,7 @@ extern "C" int32_t CONCAT(runSWOnePairBT_,SIMD_ENGINE)(int32_t match, int32_t mi
     int32_t  w_extend = extend;
 
     
-    D_MAX_SEQ_LEN = MAX_SEQ_LEN;
+    uint32_t D_MAX_SEQ_LEN = MAX_SEQ_LEN;
 
     int len = max(len1, len2);
 
@@ -488,8 +486,8 @@ extern "C" int32_t CONCAT(runSWOnePairBT_,SIMD_ENGINE)(int32_t match, int32_t mi
     p.btrack = backTrack_;
     p.cigar = cigarArray;
 
-    smithWatermanBackTrack(&p, match, mismatch,  open, extend, E_, 0);
-    getCIGAR(&p, cigarBuf_, cigarLen, 0);
+    smithWatermanBackTrack(D_MAX_SEQ_LEN, &p, match, mismatch,  open, extend, E_, 0);
+    getCIGAR(D_MAX_SEQ_LEN, &p, cigarBuf_, cigarLen, 0);
     (*cigarCount) = p.cigarCount;
 
     _mm_free(E_);
